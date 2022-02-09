@@ -21,9 +21,6 @@
 		C86B05270671AA6E00DD9006 /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C86B05260671AA6E00DD9006 /* CoreServices.framework */; };
 		DF2ED544259ABA6800D31889 /* UniversalDetector.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF2ED542259ABA6800D31889 /* UniversalDetector.framework */; };
 		DF2ED546259ABA6800D31889 /* XADMaster.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF2ED543259ABA6800D31889 /* XADMaster.framework */; };
-		DFB8B05825877C1C00A6F255 /* Debug.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = DFB8B05525877C1C00A6F255 /* Debug.xcconfig */; };
-		DFB8B05925877C1C00A6F255 /* Release.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = DFB8B05625877C1C00A6F255 /* Release.xcconfig */; };
-		DFB8B05A25877C1C00A6F255 /* Shared.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = DFB8B05725877C1C00A6F255 /* Shared.xcconfig */; };
 		F28CFBFD0A3EC0AF000ABFF5 /* ApplicationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F28CFBFC0A3EC0AF000ABFF5 /* ApplicationServices.framework */; };
 		F28CFC030A3EC0C6000ABFF5 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F28CFC020A3EC0C6000ABFF5 /* QuickLook.framework */; };
 /* End PBXBuildFile section */
@@ -177,7 +174,7 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 1220;
+				LastUpgradeCheck = 1320;
 			};
 			buildConfigurationList = 2CA326220896AD4900168862 /* Build configuration list for PBXProject "QuickComic" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -201,10 +198,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DFB8B05825877C1C00A6F255 /* Debug.xcconfig in Resources */,
-				DFB8B05A25877C1C00A6F255 /* Shared.xcconfig in Resources */,
 				8D5B49A804867FD3000E48DA /* InfoPlist.strings in Resources */,
-				DFB8B05925877C1C00A6F255 /* Release.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
