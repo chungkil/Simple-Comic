@@ -1024,6 +1024,7 @@
 	[self adjustStatusBar];
     NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
     int loupeDiameter = [[defaults valueForKey: TSSTLoupeDiameter] intValue];
+    loupeDiameter = 1000;
     [loupeWindow setFrame:NSMakeRect(0,0, loupeDiameter, loupeDiameter) display: NO];
     NSColor * color = [NSUnarchiver unarchiveObjectWithData: [defaults valueForKey: TSSTBackgroundColor]];
 	[pageScrollView setBackgroundColor: color];
