@@ -190,7 +190,7 @@ static NSArray * allAvailableStringEncodings(void)
     standardDefaults[TSSTAutoPageTurn] = @YES;
 	standardDefaults[TSSTBackgroundColor] = [NSArchiver archivedDataWithRootObject: [NSColor whiteColor]];
     standardDefaults[TSSTWindowAutoResize] = @YES;
-    standardDefaults[TSSTLoupeDiameter] = @500;
+    standardDefaults[TSSTLoupeDiameter] = @1200;
 	standardDefaults[TSSTLoupePower] = @2.0f;
  	standardDefaults[TSSTStatusbarVisible] = @YES;
     standardDefaults[TSSTLonelyFirstPage] = @YES;
