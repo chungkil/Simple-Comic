@@ -266,15 +266,22 @@
             instance = [[XADArchive alloc] initWithFile: [self valueForKey: @"path"] delegate: self error:NULL];
 
             // Set the archive delegate so that password and encoding queries can have a modal pop up.
-			
+
             if([self valueForKey: @"password"])
             {
                 [instance setPassword: [self valueForKey: @"password"]];
             }
         }
     }
-	
+
     return instance;
+}
+
+
+- (void)invalidateInstance
+{
+    [instance release];
+    instance = nil;
 }
 
 
@@ -357,9 +364,16 @@
     
     for (counter = 0; counter < archivedFilesCount; ++counter)
     {
+        /* Skip orphan resource-fork-only entries (AppleDouble metadata
+           without a paired data fork). XADArchive promotes these to look
+           like real files via the resource fork's recorded filename, but
+           reading their content returns AppleDouble bytes instead of an
+           image — producing "ghost" pages that render blank. */
+        if(![imageArchive dataForkParserDictionaryForEntry: counter]) continue;
+
         fileName = [imageArchive nameOfEntry: counter];
         nestedDescription = nil;
-		
+
         if(!([fileName isEqualToString: @""] || [[[fileName lastPathComponent] substringToIndex: 1] isEqualToString: @"."]))
         {
             extension = [[fileName pathExtension] lowercaseString];

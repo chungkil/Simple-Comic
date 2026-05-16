@@ -98,6 +98,8 @@
 		pageSelectionInProgress = None;
 		mouseMovedTimer = nil;
 //		closing = NO;
+		pendingFolderDeletes = [[NSMutableArray alloc] init];
+		pendingArchiveDeletes = [[NSMutableDictionary alloc] init];
         session = [aSession retain];
         BOOL cascade = [session valueForKey: @"position"] ? NO : YES;
         [self setShouldCascadeWindows: cascade];
@@ -199,6 +201,8 @@
     [pageView setSessionController: nil];
 	[pageSortDescriptor release];
 	[pageNames release];
+	[pendingFolderDeletes release];
+	[pendingArchiveDeletes release];
     [session release];
     [super dealloc];
 }
@@ -801,19 +805,35 @@
 
 - (BOOL)canSelectPageIndex:(NSInteger)selection
 {
-	int index = [pageController selectionIndex];
-	index += selection;
-	TSSTPage * selectedPage = [pageController arrangedObjects][index];
+	NSInteger index = [pageController selectionIndex] + selection;
+	NSArray * arranged = [pageController arrangedObjects];
+	if(index < 0 || (NSUInteger)index >= [arranged count]) return NO;
+	TSSTPage * selectedPage = arranged[index];
+	if([[selectedPage valueForKey: @"text"] boolValue]) return NO;
+
 	TSSTManagedGroup * selectedGroup = [selectedPage valueForKey: @"group"];
-	/* Makes sure that the group is both an archive and not nested */
-	if([selectedGroup class] == [TSSTManagedArchive class] && 
-	   selectedGroup == [selectedGroup topLevelGroup] &&
-	   ![[selectedPage valueForKey: @"text"] boolValue])
+	BOOL isTopLevelArchive = [selectedGroup class] == [TSSTManagedArchive class] &&
+	                         selectedGroup == [selectedGroup topLevelGroup];
+
+	if(pageSelectionInProgress == Delete)
 	{
-		return YES;
+		/* Move to Trash: CBZ archive page or loose folder image. */
+		if(isTopLevelArchive)
+		{
+			NSString * ext = [[[selectedGroup valueForKey: @"path"] pathExtension] lowercaseString];
+			return [ext isEqualToString: @"cbz"] || [ext isEqualToString: @"zip"];
+		}
+		if(selectedGroup && ![selectedGroup isKindOfClass: [TSSTManagedArchive class]])
+		{
+			NSString * imagePath = [selectedPage valueForKey: @"imagePath"];
+			return imagePath && [imagePath isAbsolutePath] &&
+			       [[NSFileManager defaultManager] fileExistsAtPath: imagePath];
+		}
+		return NO;
 	}
-	
-	return NO;
+
+	/* Icon / Extract: any top-level archive (original behavior). */
+	return isTopLevelArchive;
 }
 
 
@@ -856,14 +876,34 @@
 
 - (void)deletePageWithSelection:(NSInteger)selection
 {
-	if(selection != -1)
+	if(selection == -1) return;
+
+	NSInteger index = [pageController selectionIndex] + selection;
+	TSSTPage * selectedPage = [pageController arrangedObjects][index];
+	TSSTManagedGroup * group = [selectedPage valueForKey: @"group"];
+	NSString * imagePath = [selectedPage valueForKey: @"imagePath"];
+
+	if([group isKindOfClass: [TSSTManagedArchive class]])
 	{
-		int index = [pageController selectionIndex];
-		index += selection;
-		TSSTPage * selectedPage = [pageController arrangedObjects][index];
-		[pageController removeObject: selectedPage];
-		[[self managedObjectContext] deleteObject: selectedPage];
+		NSString * archivePath = [group valueForKey: @"path"];
+		if(archivePath && imagePath)
+		{
+			NSMutableArray * entries = pendingArchiveDeletes[archivePath];
+			if(!entries)
+			{
+				entries = [NSMutableArray array];
+				pendingArchiveDeletes[archivePath] = entries;
+			}
+			[entries addObject: imagePath];
+		}
 	}
+	else if(imagePath && [imagePath isAbsolutePath])
+	{
+		[pendingFolderDeletes addObject: imagePath];
+	}
+
+	[pageController removeObject: selectedPage];
+	[[self managedObjectContext] deleteObject: selectedPage];
 }
 
 
@@ -1495,10 +1535,170 @@ images are currently visible and then skips over them.
 
 - (BOOL)windowShouldClose:(id)sender
 {
+	if([pendingArchiveDeletes count] > 0 || [pendingFolderDeletes count] > 0)
+	{
+		NSInteger total = [pendingFolderDeletes count];
+		for(NSArray * entries in [pendingArchiveDeletes allValues]) total += [entries count];
+
+		NSAlert * alert = [[[NSAlert alloc] init] autorelease];
+		[alert setMessageText: @"제거한 페이지를 원본에 반영할까요?"];
+		[alert setInformativeText: [NSString stringWithFormat:
+			@"이 세션에서 %ld개의 페이지를 제거했습니다. 원본 파일/아카이브에서도 삭제하면 되돌릴 수 없습니다.",
+			(long)total]];
+		[alert addButtonWithTitle: @"반영"];
+		[alert addButtonWithTitle: @"되돌리기"];
+		[alert addButtonWithTitle: @"취소"];
+		[[alert buttons][0] setKeyEquivalent: @"\r"];
+		[[alert buttons][2] setKeyEquivalent: @"\033"];
+
+		NSModalResponse response = [alert runModal];
+		if(response == NSAlertThirdButtonReturn)
+		{
+			return NO;
+		}
+		else if(response == NSAlertFirstButtonReturn)
+		{
+			[self commitPendingDeletions];
+		}
+		else
+		{
+			[self discardPendingDeletions];
+		}
+	}
+
 	[self prepareToEnd];
 	[[NSNotificationCenter defaultCenter] postNotificationName: TSSTSessionEndNotification object: self];
 
     return YES;
+}
+
+
+- (void)commitPendingDeletions
+{
+	NSFileManager * fm = [NSFileManager defaultManager];
+
+	/* Remove loose folder image files. */
+	for(NSString * path in pendingFolderDeletes)
+	{
+		NSError * err = nil;
+		if(![fm removeItemAtPath: path error: &err])
+		{
+			NSLog(@"removeItem %@: %@", path, err);
+		}
+	}
+	[pendingFolderDeletes removeAllObjects];
+
+	if([pendingArchiveDeletes count] == 0)
+	{
+		[(SimpleComicAppDelegate *)[NSApp delegate] saveContext];
+		return;
+	}
+
+	/* Resolve archive groups by path so we can update indices and invalidate
+	   the cached XADArchive instance after the zip is rewritten. */
+	NSMutableDictionary * pathToGroup = [NSMutableDictionary dictionary];
+	for(TSSTPage * p in [pageController arrangedObjects])
+	{
+		TSSTManagedGroup * g = [p valueForKey: @"group"];
+		if([g isKindOfClass: [TSSTManagedArchive class]])
+		{
+			NSString * gp = [g valueForKey: @"path"];
+			if(gp && !pathToGroup[gp]) pathToGroup[gp] = g;
+		}
+	}
+
+	for(NSString * archivePath in [pendingArchiveDeletes allKeys])
+	{
+		NSArray * entries = pendingArchiveDeletes[archivePath];
+		if(![entries count]) continue;
+		if(![fm fileExistsAtPath: archivePath]) continue;
+
+		/* Delete the entries AND their paired __MACOSX AppleDouble metadata
+		   to keep XADArchive from promoting orphan metadata into ghost
+		   pages on the next open. */
+		NSMutableArray * deleteList = [NSMutableArray arrayWithArray: entries];
+		for(NSString * entry in entries)
+		{
+			NSString * dir = [entry stringByDeletingLastPathComponent];
+			NSString * base = [entry lastPathComponent];
+			NSString * appleDouble = [dir length]
+				? [NSString stringWithFormat: @"__MACOSX/%@/._%@", dir, base]
+				: [NSString stringWithFormat: @"__MACOSX/._%@", base];
+			[deleteList addObject: appleDouble];
+		}
+
+		NSTask * task = [[[NSTask alloc] init] autorelease];
+		[task setLaunchPath: @"/usr/bin/zip"];
+		NSMutableArray * args = [NSMutableArray arrayWithObjects: @"-d", archivePath, nil];
+		[args addObjectsFromArray: deleteList];
+		[task setArguments: args];
+		[task setStandardOutput: [NSPipe pipe]];
+		[task setStandardError: [NSPipe pipe]];
+
+		int status = -1;
+		@try
+		{
+			[task launch];
+			[task waitUntilExit];
+			status = [task terminationStatus];
+		}
+		@catch(NSException * e)
+		{
+			NSLog(@"zip task exception for %@: %@", archivePath, e);
+			continue;
+		}
+
+		/* zip -d returns 12 if some named entries weren't found (the
+		   AppleDouble partners often aren't); that's fine as long as the
+		   actual entries were deleted. We only bail on more serious errors. */
+		if(status != 0 && status != 12)
+		{
+			NSLog(@"zip -d failed (status %d) for %@", status, archivePath);
+			continue;
+		}
+
+		/* Re-read the modified archive and update each surviving page's
+		   stored `index` so it matches the new entry positions. Apply the
+		   same data-fork filter so orphan AppleDouble entries don't
+		   pollute the map. */
+		TSSTManagedArchive * group = pathToGroup[archivePath];
+		if(!group) continue;
+
+		XADArchive * fresh = [[XADArchive alloc] initWithFile: archivePath delegate: nil error: NULL];
+		if(fresh)
+		{
+			NSMutableDictionary * nameToIndex = [NSMutableDictionary dictionary];
+			NSInteger n = [fresh numberOfEntries];
+			for(NSInteger i = 0; i < n; i++)
+			{
+				if(![fresh dataForkParserDictionaryForEntry: (int)i]) continue;
+				NSString * name = [fresh nameOfEntry: (int)i];
+				if(name) nameToIndex[name] = @(i);
+			}
+			[fresh release];
+
+			for(TSSTPage * p in [pageController arrangedObjects])
+			{
+				if([p valueForKey: @"group"] != group) continue;
+				NSString * entryName = [p valueForKey: @"imagePath"];
+				NSNumber * newIdx = entryName ? nameToIndex[entryName] : nil;
+				if(newIdx) [p setValue: newIdx forKey: @"index"];
+			}
+		}
+
+		[group invalidateInstance];
+	}
+	[pendingArchiveDeletes removeAllObjects];
+
+	[(SimpleComicAppDelegate *)[NSApp delegate] saveContext];
+}
+
+
+- (void)discardPendingDeletions
+{
+	[pendingFolderDeletes removeAllObjects];
+	[pendingArchiveDeletes removeAllObjects];
+	[[self managedObjectContext] rollback];
 }
 
 

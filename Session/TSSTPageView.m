@@ -1165,6 +1165,19 @@
 	if ([sessionController pageSelectionInProgress]) {
 		NSPoint cursor = [self convertPoint: [theEvent locationInWindow] fromView: nil];
 		cropRect.origin = cursor;
+		if(NSPointInRect(cursor, firstPageRect) && [sessionController canSelectPageIndex: 0])
+		{
+			pageSelection = 0;
+		}
+		else if(NSPointInRect(cursor, secondPageRect) && [sessionController canSelectPageIndex: 1])
+		{
+			pageSelection = 1;
+		}
+		else
+		{
+			pageSelection = -1;
+		}
+		[self setNeedsDisplay: YES];
 	}
 	else if([self dragIsPossible])
     {

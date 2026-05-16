@@ -107,6 +107,12 @@ enum PageSelectionMode {
 	
 	enum PageSelectionMode pageSelectionInProgress;
 	float savedZoom;
+
+	/* Per-session pending deletions to be confirmed on window close.
+	   Keys in pendingArchiveDeletes are archive file paths; values are
+	   mutable arrays of in-archive entry names. */
+	NSMutableArray      * pendingFolderDeletes;
+	NSMutableDictionary * pendingArchiveDeletes;
 }
 
 @property (retain) NSArray * pageSortDescriptor;
@@ -159,6 +165,9 @@ enum PageSelectionMode {
 - (void)deletePageWithSelection:(NSInteger)selection;
 - (void)extractPageWithSelection:(NSInteger)selection;
 - (void)changeViewForSelection;
+
+- (void)commitPendingDeletions;
+- (void)discardPendingDeletions;
 
 - (NSImage *)imageForPageAtIndex:(int)index;
 - (NSString *)nameForPageAtIndex:(int)index;

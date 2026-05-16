@@ -48,6 +48,11 @@ Copyright (c) 2006-2009 Dancing Tortoise Software
 
 - (void)nestedFolderContents;
 
+/* Drops the cached XADArchive/PDF instance so the next access reopens
+   the underlying file from disk. Call after modifying the source file
+   out-of-band (e.g. zip -d on a CBZ). */
+- (void)invalidateInstance;
+
 @end
 
 @interface TSSTManagedArchive : TSSTManagedGroup
