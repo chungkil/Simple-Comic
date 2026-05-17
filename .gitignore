@@ -17,3 +17,9 @@ xcuserdata
 .DS_Store
 profile
 
+
+# Carthage
+Carthage/*
+
+# Auto-generated version (regenerated from git tag at build time)
+Config/Version.generated.xcconfig
