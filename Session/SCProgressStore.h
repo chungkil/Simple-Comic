@@ -32,5 +32,7 @@
 - (NSArray *)bookmarksForKey:(NSString *)key;
 - (void)addBookmarkName:(NSString *)name page:(NSInteger)page forKey:(NSString *)key;
 - (void)removeAllBookmarksForKey:(NSString *)key;
+- (void)removeBookmarkAtIndex:(NSInteger)index forKey:(NSString *)key;
+- (void)renameBookmarkAtIndex:(NSInteger)index toName:(NSString *)name forKey:(NSString *)key;
 
 @end

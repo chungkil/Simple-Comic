@@ -349,18 +349,52 @@ static NSArray * allAvailableStringEncodings(void)
 		return;
 	}
 
+	NSMenu * editMenu = [[[NSMenu alloc] initWithTitle: @"Edit Bookmark"] autorelease];
+
+	NSInteger index = 0;
 	for(NSDictionary * mark in bookmarks)
 	{
 		NSInteger page = [[mark objectForKey: @"page"] integerValue];
-		NSString * title = [NSString stringWithFormat: @"%@  (%ld)",
-							 [mark objectForKey: @"name"], (long)(page + 1)];
+		NSString * name = [mark objectForKey: @"name"];
+		NSString * title = [NSString stringWithFormat: @"%@  (%ld)", name, (long)(page + 1)];
+
 		NSMenuItem * item = [[[NSMenuItem alloc] initWithTitle: title
 														action: @selector(bookmarkSelected:)
 												 keyEquivalent: @""] autorelease];
 		[item setTarget: self];
 		[item setRepresentedObject: @(page)];
 		[menu addItem: item];
+
+		NSMenuItem * editItem = [[[NSMenuItem alloc] initWithTitle: title
+															 action: NULL
+													  keyEquivalent: @""] autorelease];
+		NSMenu * itemMenu = [[[NSMenu alloc] initWithTitle: name] autorelease];
+
+		NSMenuItem * renameItem = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Rename…", @"")
+															  action: @selector(renameBookmark:)
+													   keyEquivalent: @""] autorelease];
+		[renameItem setTarget: self];
+		[renameItem setRepresentedObject: @(index)];
+		[itemMenu addItem: renameItem];
+
+		NSMenuItem * deleteItem = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Delete", @"")
+															  action: @selector(deleteBookmark:)
+													   keyEquivalent: @""] autorelease];
+		[deleteItem setTarget: self];
+		[deleteItem setRepresentedObject: @(index)];
+		[itemMenu addItem: deleteItem];
+
+		[editItem setSubmenu: itemMenu];
+		[editMenu addItem: editItem];
+		++index;
 	}
+
+	[menu addItem: [NSMenuItem separatorItem]];
+	NSMenuItem * editParent = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Edit Bookmark", @"")
+														  action: NULL
+												   keyEquivalent: @""] autorelease];
+	[editParent setSubmenu: editMenu];
+	[menu addItem: editParent];
 }
 
 
@@ -368,6 +402,18 @@ static NSArray * allAvailableStringEncodings(void)
 {
 	TSSTSessionWindowController * controller = [self activeSessionController];
 	[controller jumpToPageIndex: [[sender representedObject] integerValue]];
+}
+
+
+- (void)renameBookmark:(id)sender
+{
+	[[self activeSessionController] renameBookmarkAtIndex: [[sender representedObject] integerValue]];
+}
+
+
+- (void)deleteBookmark:(id)sender
+{
+	[[self activeSessionController] deleteBookmarkAtIndex: [[sender representedObject] integerValue]];
 }
 
 

@@ -645,6 +645,52 @@
 }
 
 
+- (void)renameBookmarkAtIndex:(NSInteger)index
+{
+    NSString * key = [self workIdentifier];
+    if([key length] == 0)
+    {
+        return;
+    }
+    NSArray * bookmarks = [[SCProgressStore sharedStore] bookmarksForKey: key];
+    if(index < 0 || index >= (NSInteger)[bookmarks count])
+    {
+        return;
+    }
+    NSString * current = [[bookmarks objectAtIndex: index] objectForKey: @"name"];
+
+    NSAlert * alert = [[[NSAlert alloc] init] autorelease];
+    [alert setMessageText: NSLocalizedString(@"Rename Bookmark", @"Rename bookmark alert title")];
+    [alert setInformativeText: NSLocalizedString(@"New name:", @"Rename bookmark prompt")];
+    [alert addButtonWithTitle: NSLocalizedString(@"Rename", @"Rename bookmark confirm")];
+    [alert addButtonWithTitle: NSLocalizedString(@"Cancel", @"Cancel")];
+
+    NSTextField * field = [[[NSTextField alloc] initWithFrame: NSMakeRect(0, 0, 240, 24)] autorelease];
+    [field setStringValue: current ? current : @""];
+    [alert setAccessoryView: field];
+
+    if([alert runModal] == NSAlertFirstButtonReturn)
+    {
+        NSString * name = [field stringValue];
+        if([name length] > 0)
+        {
+            [[SCProgressStore sharedStore] renameBookmarkAtIndex: index toName: name forKey: key];
+        }
+    }
+}
+
+
+- (void)deleteBookmarkAtIndex:(NSInteger)index
+{
+    NSString * key = [self workIdentifier];
+    if([key length] == 0)
+    {
+        return;
+    }
+    [[SCProgressStore sharedStore] removeBookmarkAtIndex: index forKey: key];
+}
+
+
 /*  Installs the document view that matches the current reading mode.  In
     webtoon mode the whole session is presented as one continuous vertical
     strip; otherwise the original paged compositor is restored. */

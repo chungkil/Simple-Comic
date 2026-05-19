@@ -210,6 +210,8 @@ enum PageSelectionMode {
 - (void)persistProgress;
 - (void)restoreProgress;
 - (void)jumpToPageIndex:(NSInteger)index;
+- (void)renameBookmarkAtIndex:(NSInteger)index;
+- (void)deleteBookmarkAtIndex:(NSInteger)index;
 
 - (void)resizeWindow;
 - (void)resizeView;

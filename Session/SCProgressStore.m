@@ -145,4 +145,32 @@
 }
 
 
+- (void)removeBookmarkAtIndex:(NSInteger)index forKey:(NSString *)key
+{
+    NSMutableArray * marks = [[self mutableRecordForKey: key create: NO] objectForKey: @"bookmarks"];
+    if([marks isKindOfClass: [NSMutableArray class]] && index >= 0 && index < (NSInteger)[marks count])
+    {
+        [marks removeObjectAtIndex: index];
+        [self synchronize];
+    }
+}
+
+
+- (void)renameBookmarkAtIndex:(NSInteger)index toName:(NSString *)name forKey:(NSString *)key
+{
+    if([name length] == 0)
+    {
+        return;
+    }
+    NSMutableArray * marks = [[self mutableRecordForKey: key create: NO] objectForKey: @"bookmarks"];
+    if([marks isKindOfClass: [NSMutableArray class]] && index >= 0 && index < (NSInteger)[marks count])
+    {
+        NSDictionary * old = [marks objectAtIndex: index];
+        [marks replaceObjectAtIndex: index
+                         withObject: @{ @"name": name, @"page": [old objectForKey: @"page"] }];
+        [self synchronize];
+    }
+}
+
+
 @end
