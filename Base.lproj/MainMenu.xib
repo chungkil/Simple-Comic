@@ -82,6 +82,12 @@
                                     </items>
                                 </menu>
                             </menuItem>
+                            <menuItem title="Library" keyEquivalent="y" id="scLib0001">
+                                <connections>
+                                    <action selector="showLibrary:" target="205" id="scLib0002"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="scLib0003"/>
                             <menuItem title="Close Window" keyEquivalent="w" id="960">
                                 <connections>
                                     <action selector="performClose:" target="-1" id="973"/>

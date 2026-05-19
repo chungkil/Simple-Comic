@@ -145,6 +145,29 @@
 }
 
 
+- (NSArray *)allWorkKeys
+{
+    return [[records allKeys] sortedArrayUsingComparator: ^NSComparisonResult(id a, id b) {
+        NSDate * da = [[records objectForKey: a] objectForKey: @"updated"];
+        NSDate * db = [[records objectForKey: b] objectForKey: @"updated"];
+        if(!da && !db) { return [a compare: b]; }
+        if(!da) { return NSOrderedDescending; }
+        if(!db) { return NSOrderedAscending; }
+        return [db compare: da];
+    }];
+}
+
+
+- (void)removeRecordForKey:(NSString *)key
+{
+    if([key length] && [records objectForKey: key])
+    {
+        [records removeObjectForKey: key];
+        [self synchronize];
+    }
+}
+
+
 - (void)removeBookmarkAtIndex:(NSInteger)index forKey:(NSString *)key
 {
     NSMutableArray * marks = [[self mutableRecordForKey: key create: NO] objectForKey: @"bookmarks"];

@@ -31,6 +31,7 @@
 #import <XADMaster/XADArchive.h>
 #import "TSSTSessionWindowController.h"
 #import "SCProgressStore.h"
+#import "SCLibraryWindowController.h"
 #import "TSSTSortDescriptor.h"
 #import "TSSTPage.h"
 #import "TSSTManagedGroup.h"
@@ -402,6 +403,27 @@ static NSArray * allAvailableStringEncodings(void)
 {
 	TSSTSessionWindowController * controller = [self activeSessionController];
 	[controller jumpToPageIndex: [[sender representedObject] integerValue]];
+}
+
+
+- (void)openWorkAtPath:(NSString *)path
+{
+	if([path length] == 0 || ![[NSFileManager defaultManager] fileExistsAtPath: path])
+	{
+		NSBeep();
+		return;
+	}
+	[self windowForSession: [self newSessionWithFiles: @[path]]];
+}
+
+
+- (IBAction)showLibrary:(id)sender
+{
+	if(!libraryController)
+	{
+		libraryController = [[SCLibraryWindowController alloc] init];
+	}
+	[(SCLibraryWindowController *)libraryController showWindow: sender];
 }
 
 

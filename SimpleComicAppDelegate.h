@@ -112,7 +112,9 @@ extern NSString * TSSTSessionEndNotification;
     BOOL      launchInProgress;
 	BOOL	  optionHeldAtlaunch;
 	NSArray	* launchFiles;
-	
+
+/*  The single browse/catalog window, created on first use. */
+	id        libraryController;
 }
 
 
@@ -138,6 +140,13 @@ extern NSString * TSSTSessionEndNotification;
 /*  This method is called every time an existing session needs
     to be made visible to a user. */
 - (void)windowForSession:(TSSTManagedSession *)session;
+
+/*  Opens the work at the given file-system path in a new session
+	(used by the library window). */
+- (void)openWorkAtPath:(NSString *)path;
+
+/*  Shows the library / shelf window. */
+- (IBAction)showLibrary:(id)sender;
 
 /*  When an end session notification is received this method
 	is called. */

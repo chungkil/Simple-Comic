@@ -35,4 +35,8 @@
 - (void)removeBookmarkAtIndex:(NSInteger)index forKey:(NSString *)key;
 - (void)renameBookmarkAtIndex:(NSInteger)index toName:(NSString *)name forKey:(NSString *)key;
 
+/* All known work keys, most-recently-updated first (for the library). */
+- (NSArray *)allWorkKeys;
+- (void)removeRecordForKey:(NSString *)key;
+
 @end
