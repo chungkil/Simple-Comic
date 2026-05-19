@@ -82,6 +82,11 @@ enum PageSelectionMode {
 	/* YES once a saved per-work record has been applied, so progress is
 	   not persisted from the initial (pre-restore) state. */
 	BOOL progressRestored;
+
+	/* Decoded full-page images for the paged reading path, kept warm a
+	   few pages ahead/behind so page turns do not block on a decode. */
+	NSCache * pagedImageCache;
+	NSMutableIndexSet * pagedPrefetching;
 	/* There is an outlet to this so that the visibility of the 
 		scrollers can be manually controlled. */
     IBOutlet NSScrollView  * pageScrollView;
@@ -210,6 +215,9 @@ enum PageSelectionMode {
 - (void)persistProgress;
 - (void)restoreProgress;
 - (void)jumpToPageIndex:(NSInteger)index;
+- (NSImage *)displayImageForPageAtIndex:(int)index;
+- (void)prefetchPagesAroundIndex:(int)index;
+- (void)clearPagedCache;
 - (void)renameBookmarkAtIndex:(NSInteger)index;
 - (void)deleteBookmarkAtIndex:(NSInteger)index;
 

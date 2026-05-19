@@ -100,6 +100,9 @@
 		pageSelectionInProgress = None;
 		layoutModeOverride = -1;
 		progressRestored = NO;
+		pagedImageCache = [[NSCache alloc] init];
+		[pagedImageCache setCountLimit: 8];
+		pagedPrefetching = [[NSMutableIndexSet alloc] init];
 		mouseMovedTimer = nil;
 //		closing = NO;
 		pendingFolderDeletes = [[NSMutableArray alloc] init];
@@ -201,6 +204,8 @@
 	[webtoonView setSessionController: nil];
 	[webtoonView release];
 	[pageView release];
+	[pagedImageCache release];
+	[pagedPrefetching release];
     [pageController removeObserver: self forKeyPath: @"selectionIndex"];
     [pageController removeObserver: self forKeyPath: @"arrangedObjects.@count"];
     [[NSNotificationCenter defaultCenter] removeObserver: self];
@@ -251,6 +256,7 @@
     else if([keyPath isEqualToString: @"arrangedObjects.@count"])
     {
         [NSThread detachNewThreadSelector: @selector(processThumbs) toTarget: exposeView withObject: nil];
+        [self clearPagedCache];
         if([self isWebtoonMode] && webtoonView)
         {
             [webtoonView setPages: [NSArray arrayWithArray: [pageController arrangedObjects]]];
@@ -1418,11 +1424,119 @@
 	[[self window] setRepresentedFilename: representationPath];
 
     [self setValue: titleString forKey: @"pageNames"];
-    [pageView setFirstPage: [pageOne valueForKey: @"pageImage"] secondPageImage: [pageTwo valueForKey: @"pageImage"]];
-    
+    NSImage * firstImage = [self displayImageForPageAtIndex: index];
+    NSImage * secondImage = pageTwo ? [self displayImageForPageAtIndex: (index + 1)] : nil;
+    [pageView setFirstPage: firstImage secondPageImage: secondImage];
+
     [self scaleToWindow];
 	[pageView correctViewPoint];
     [self refreshLoupePanel];
+
+    [self prefetchPagesAroundIndex: index];
+}
+
+
+/*  Returns the full image for a page, using the warm cache when possible
+    so a page turn does not block on a decode.  Text pages are rendered
+    directly (cheap, and not a decodable image format). */
+- (NSImage *)displayImageForPageAtIndex:(int)index
+{
+    NSArray * pages = [pageController arrangedObjects];
+    if(index < 0 || index >= (int)[pages count])
+    {
+        return nil;
+    }
+    TSSTPage * page = pages[index];
+    if([[page valueForKey: @"text"] boolValue])
+    {
+        return [page valueForKey: @"pageImage"];
+    }
+
+    NSImage * cached = [pagedImageCache objectForKey: @(index)];
+    if(cached)
+    {
+        return cached;
+    }
+
+    NSImage * image = [page valueForKey: @"pageImage"];
+    if(image)
+    {
+        [pagedImageCache setObject: image forKey: @(index)];
+    }
+    return image;
+}
+
+
+/*  Decodes a small window of pages around the current one on a background
+    queue.  Only -pageData (guarded by the archive's groupLock) and image
+    decoding happen off the main thread; no managed-object writes. */
+- (void)prefetchPagesAroundIndex:(int)index
+{
+    NSArray * pages = [pageController arrangedObjects];
+    int count = (int)[pages count];
+    for(int i = index - 1; i <= index + 4; ++i)
+    {
+        if(i < 0 || i >= count || i == index)
+        {
+            continue;
+        }
+        if([pagedImageCache objectForKey: @(i)] || [pagedPrefetching containsIndex: i])
+        {
+            continue;
+        }
+        TSSTPage * page = pages[i];
+        if([[page valueForKey: @"text"] boolValue])
+        {
+            continue;
+        }
+
+        int pageIndex = i;
+        [pagedPrefetching addIndex: pageIndex];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            @autoreleasepool
+            {
+                NSData * data = [page pageData];
+                NSImage * image = nil;
+                if(data)
+                {
+                    image = [[NSImage alloc] initWithData: data];
+                    NSArray * reps = [image representations];
+                    NSImageRep * rep = [reps count] ? [reps objectAtIndex: 0] : nil;
+                    NSInteger pw = rep ? [rep pixelsWide] : 0;
+                    NSInteger ph = rep ? [rep pixelsHigh] : 0;
+                    if(image && pw > 0 && ph > 0)
+                    {
+                        [image setCacheMode: NSImageCacheNever];
+                        [image setSize: NSMakeSize(pw, ph)];
+                    }
+                    else
+                    {
+                        [image release];
+                        image = nil;
+                    }
+                }
+
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [pagedPrefetching removeIndex: pageIndex];
+                    NSArray * current = [pageController arrangedObjects];
+                    if(image
+                       && pageIndex < (int)[current count]
+                       && current[pageIndex] == page)
+                    {
+                        [pagedImageCache setObject: image forKey: @(pageIndex)];
+                    }
+                    [image release];
+                });
+            }
+        });
+    }
+}
+
+
+- (void)clearPagedCache
+{
+    [pagedImageCache removeAllObjects];
+    [pagedPrefetching removeAllIndexes];
 }
 
 
