@@ -51,4 +51,9 @@
 /* Index of the page currently occupying the top of the viewport. */
 - (NSInteger)currentPageIndex;
 
+/* Magnified image of the strip centred on the cursor, for the loupe.
+   rect.origin is the cursor point in this view's coordinates and
+   rect.size is the loupe's pixel size. */
+- (NSImage *)imageInRect:(NSRect)rect;
+
 @end

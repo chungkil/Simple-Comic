@@ -377,12 +377,15 @@
 {
     BOOL loupe = [[session valueForKey: @"loupe"] boolValue];
     NSPoint mouse = [NSEvent mouseLocation];
-    
+
+    BOOL webtoon = [self isWebtoonMode] && webtoonView;
+    NSView * loupeSourceView = webtoon ? (NSView *)webtoonView : (NSView *)pageView;
+
     NSRect point = NSMakeRect(mouse.x, mouse.y, 0, 0);
-    NSPoint localPoint = [pageView convertPoint: [[self window] convertRectFromScreen: point].origin fromView: nil];
+    NSPoint localPoint = [loupeSourceView convertPoint: [[self window] convertRectFromScreen: point].origin fromView: nil];
     NSPoint scrollPoint = [pageScrollView convertPoint: [[self window] convertRectFromScreen: point].origin fromView: nil];
     if(NSMouseInRect(scrollPoint, [pageScrollView bounds], [pageScrollView isFlipped])
-	   && loupe 
+	   && loupe
 	   && [[self window] isKeyWindow]
 	   && pageSelectionInProgress == None)
     {
@@ -391,11 +394,18 @@
 			[[self window] addChildWindow: loupeWindow ordered: NSWindowAbove];
 			[NSCursor hide];
 		}
-		
+
 		NSRect zoomRect = [zoomView frame];
 		[loupeWindow centerAtPoint: mouse];
 		zoomRect.origin = localPoint;
-		[zoomView setImage: [pageView imageInRect: zoomRect]];
+		if(webtoon)
+		{
+			[zoomView setImage: [webtoonView imageInRect: zoomRect]];
+		}
+		else
+		{
+			[zoomView setImage: [pageView imageInRect: zoomRect]];
+		}
     }
     else
 	{
@@ -509,6 +519,7 @@
         [webtoonView scrollToPageIndex: [pageController selectionIndex]];
         [self setValue: [[pageController arrangedObjects][[pageController selectionIndex]] valueForKey: @"name"]
                 forKey: @"pageNames"];
+        [[self window] makeFirstResponder: webtoonView];
     }
     else
     {
@@ -516,6 +527,7 @@
         [self scaleToWindow];
         [self changeViewImages];
         [pageView correctViewPoint];
+        [[self window] makeFirstResponder: pageView];
     }
 }
 

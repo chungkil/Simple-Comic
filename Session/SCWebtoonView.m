@@ -5,6 +5,7 @@
 #import "SCWebtoonView.h"
 #import "TSSTSessionWindowController.h"
 #import "TSSTPage.h"
+#import "SimpleComicAppDelegate.h"
 
 /* Aspect (width / height) assumed for a page whose real dimensions are not
    known yet.  Korean webtoon panels are far taller than wide, so a tall
@@ -507,6 +508,161 @@ static const NSInteger SCPrefetchBehind = 1;
     {
         reportedPageIndex = index;
         [sessionController webtoonScrolledToPageIndex: index];
+    }
+}
+
+
+#pragma mark - Loupe
+
+
+/*  Returns a magnified image of the strip centred on the cursor.  rect is
+    given in this (flipped) view's coordinates: rect.origin is the point
+    under the cursor and rect.size is the loupe's pixel size. */
+- (NSImage *)imageInRect:(NSRect)rect
+{
+    if(pageCount == 0 || pageOffsets == NULL)
+    {
+        return nil;
+    }
+    NSSize loupeSize = rect.size;
+    if(loupeSize.width < 1.0f || loupeSize.height < 1.0f)
+    {
+        return nil;
+    }
+
+    float power = [[[NSUserDefaults standardUserDefaults] valueForKey: TSSTLoupePower] floatValue];
+    if(power < 1.0f)
+    {
+        power = 2.0f;
+    }
+
+    NSPoint cursor = rect.origin;
+    CGFloat srcW = loupeSize.width / power;
+    CGFloat srcH = loupeSize.height / power;
+    NSRect src = NSMakeRect(cursor.x - srcW * 0.5f,
+                            cursor.y - srcH * 0.5f,
+                            srcW, srcH);
+
+    NSImage * out = [[NSImage alloc] initWithSize: loupeSize];
+    [out lockFocus];
+
+    NSColor * background = [[self enclosingScrollView] backgroundColor];
+    if(!background)
+    {
+        background = [NSColor blackColor];
+    }
+    [background set];
+    NSRectFill(NSMakeRect(0.0f, 0.0f, loupeSize.width, loupeSize.height));
+    [[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
+
+    NSUInteger first = [self pageIndexForOffset: NSMinY(src) < 0.0f ? 0.0f : NSMinY(src)];
+    CGFloat bandMaxY = NSMaxY(src);
+    for(NSUInteger i = first; i < pageCount && pageOffsets[i] < bandMaxY; ++i)
+    {
+        NSImage * image = [imageCache objectForKey: @(i)];
+        if(!image)
+        {
+            NSData * data = [[pages objectAtIndex: i] pageData];
+            if(data)
+            {
+                image = [[[NSImage alloc] initWithData: data] autorelease];
+                if(image)
+                {
+                    [imageCache setObject: image forKey: @(i)];
+                }
+            }
+        }
+        if(!image)
+        {
+            continue;
+        }
+
+        NSRect pr = [self rectForPageAtIndex: i];
+        CGFloat dstX = (NSMinX(pr) - NSMinX(src)) * power;
+        CGFloat dstW = NSWidth(pr) * power;
+        CGFloat dstY = loupeSize.height - (NSMaxY(pr) - NSMinY(src)) * power;
+        CGFloat dstH = NSHeight(pr) * power;
+
+        [image drawInRect: NSMakeRect(dstX, dstY, dstW, dstH)
+                 fromRect: NSZeroRect
+                operation: NSCompositingOperationSourceOver
+                 fraction: 1.0
+           respectFlipped: YES
+                    hints: nil];
+    }
+
+    [out unlockFocus];
+    return [out autorelease];
+}
+
+
+#pragma mark - Keyboard
+
+
+- (BOOL)acceptsFirstResponder
+{
+    return YES;
+}
+
+
+- (void)scrollByVertical:(CGFloat)dy
+{
+    NSRect visible = [self visibleRect];
+    CGFloat maxY = NSMaxY([self bounds]) - NSHeight(visible);
+    if(maxY < 0.0f)
+    {
+        maxY = 0.0f;
+    }
+    CGFloat newY = NSMinY(visible) + dy;
+    if(newY < 0.0f)
+    {
+        newY = 0.0f;
+    }
+    if(newY > maxY)
+    {
+        newY = maxY;
+    }
+    [self scrollPoint: NSMakePoint(0.0f, newY)];
+}
+
+
+- (void)keyDown:(NSEvent *)event
+{
+    NSString * chars = [event charactersIgnoringModifiers];
+    unichar key = [chars length] ? [chars characterAtIndex: 0] : 0;
+    BOOL shift = ([event modifierFlags] & NSEventModifierFlagShift) != 0;
+    CGFloat pageStep = NSHeight([self visibleRect]) * 0.94f;
+    CGFloat lineStep = 80.0f;
+
+    switch(key)
+    {
+        case ' ':
+            [self scrollByVertical: shift ? -pageStep : pageStep];
+            break;
+        case NSPageDownFunctionKey:
+            [self scrollByVertical: pageStep];
+            break;
+        case NSPageUpFunctionKey:
+            [self scrollByVertical: -pageStep];
+            break;
+        case NSDownArrowFunctionKey:
+            [self scrollByVertical: lineStep];
+            break;
+        case NSUpArrowFunctionKey:
+            [self scrollByVertical: -lineStep];
+            break;
+        case NSHomeFunctionKey:
+            [self scrollPoint: NSZeroPoint];
+            break;
+        case NSEndFunctionKey:
+        {
+            CGFloat maxY = NSMaxY([self bounds]) - NSHeight([self visibleRect]);
+            [self scrollPoint: NSMakePoint(0.0f, maxY < 0.0f ? 0.0f : maxY)];
+            break;
+        }
+        default:
+            [super keyDown: event];
+            break;
     }
 }
 
