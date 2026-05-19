@@ -107,6 +107,8 @@
 //		closing = NO;
 		pendingFolderDeletes = [[NSMutableArray alloc] init];
 		pendingArchiveDeletes = [[NSMutableDictionary alloc] init];
+		pendingFolderRotations = [[NSMutableDictionary alloc] init];
+		pendingArchiveRotations = [[NSMutableDictionary alloc] init];
         session = [aSession retain];
         BOOL cascade = [session valueForKey: @"position"] ? NO : YES;
         [self setShouldCascadeWindows: cascade];
@@ -220,6 +222,8 @@
 	[pageNames release];
 	[pendingFolderDeletes release];
 	[pendingArchiveDeletes release];
+	[pendingFolderRotations release];
+	[pendingArchiveRotations release];
     [session release];
     [super dealloc];
 }
@@ -1199,10 +1203,12 @@
 			}
 			[entries addObject: imagePath];
 		}
+		[pendingArchiveRotations[archivePath] removeObjectForKey: imagePath];
 	}
 	else if(imagePath && [imagePath isAbsolutePath])
 	{
 		[pendingFolderDeletes addObject: imagePath];
+		[pendingFolderRotations removeObjectForKey: imagePath];
 	}
 
 	[pageController removeObject: selectedPage];
@@ -1452,16 +1458,20 @@
         return [page valueForKey: @"pageImage"];
     }
 
-    NSImage * cached = [pagedImageCache objectForKey: @(index)];
-    if(cached)
+    NSImage * image = [pagedImageCache objectForKey: @(index)];
+    if(!image)
     {
-        return cached;
+        image = [page valueForKey: @"pageImage"];
+        if(image)
+        {
+            [pagedImageCache setObject: image forKey: @(index)];
+        }
     }
 
-    NSImage * image = [page valueForKey: @"pageImage"];
-    if(image)
+    NSInteger rotation = [self pendingRotationForPage: page];
+    if(rotation && image)
     {
-        [pagedImageCache setObject: image forKey: @(index)];
+        return SCRotatedImage(image, rotation);
     }
     return image;
 }
@@ -1933,6 +1943,12 @@ images are currently visible and then skips over them.
 	{
 		valid = ![[session valueForKey: TSSTViewRotation] intValue];
 	}
+	else if ([menuItem action] == @selector(rotateSavePageRight:)
+		  || [menuItem action] == @selector(rotateSavePageLeft:))
+	{
+		valid = ![[session valueForKey: TSSTViewRotation] intValue]
+			&& [[pageController arrangedObjects] count] > 0;
+	}
     else if([menuItem tag] == 400)
     {
         state = [[session valueForKey: TSSTPageScaleOptions] intValue] == 0 ? NSOnState : NSOffState;
@@ -1994,16 +2010,22 @@ images are currently visible and then skips over them.
 
 - (BOOL)windowShouldClose:(id)sender
 {
-	if([pendingArchiveDeletes count] > 0 || [pendingFolderDeletes count] > 0)
+	if([self hasPendingArchiveEdits])
 	{
-		NSInteger total = [pendingFolderDeletes count];
-		for(NSArray * entries in [pendingArchiveDeletes allValues]) total += [entries count];
+		NSInteger delTotal = [pendingFolderDeletes count];
+		for(NSArray * entries in [pendingArchiveDeletes allValues]) delTotal += [entries count];
+		NSInteger rotTotal = [pendingFolderRotations count];
+		for(NSDictionary * m in [pendingArchiveRotations allValues]) rotTotal += [m count];
+
+		NSMutableArray * parts = [NSMutableArray array];
+		if(delTotal > 0) [parts addObject: [NSString stringWithFormat: @"%ld개 페이지 제거", (long)delTotal]];
+		if(rotTotal > 0) [parts addObject: [NSString stringWithFormat: @"%ld개 페이지 회전", (long)rotTotal]];
 
 		NSAlert * alert = [[[NSAlert alloc] init] autorelease];
-		[alert setMessageText: @"제거한 페이지를 원본에 반영할까요?"];
+		[alert setMessageText: @"변경 사항을 원본에 반영할까요?"];
 		[alert setInformativeText: [NSString stringWithFormat:
-			@"이 세션에서 %ld개의 페이지를 제거했습니다. 원본 파일/아카이브에서도 삭제하면 되돌릴 수 없습니다.",
-			(long)total]];
+			@"이 세션에서 %@했습니다. 원본 파일/아카이브에 반영하면 되돌릴 수 없습니다.",
+			[parts componentsJoinedByString: @", "]]];
 		[alert addButtonWithTitle: @"반영"];
 		[alert addButtonWithTitle: @"되돌리기"];
 		[alert addButtonWithTitle: @"취소"];
@@ -2018,6 +2040,7 @@ images are currently visible and then skips over them.
 		else if(response == NSAlertFirstButtonReturn)
 		{
 			[self commitPendingDeletions];
+			[self commitPendingRotations];
 		}
 		else
 		{
@@ -2029,6 +2052,263 @@ images are currently visible and then skips over them.
 	[[NSNotificationCenter defaultCenter] postNotificationName: TSSTSessionEndNotification object: self];
 
     return YES;
+}
+
+
+#pragma mark - Page rotation (deferred save)
+
+
+static NSBitmapImageFileType SCBitmapFileType(NSString * ext)
+{
+	ext = [ext lowercaseString];
+	if([ext isEqualToString: @"png"])  return NSBitmapImageFileTypePNG;
+	if([ext isEqualToString: @"gif"])  return NSBitmapImageFileTypeGIF;
+	if([ext isEqualToString: @"bmp"])  return NSBitmapImageFileTypeBMP;
+	if([ext isEqualToString: @"tif"] || [ext isEqualToString: @"tiff"]) return NSBitmapImageFileTypeTIFF;
+	return NSBitmapImageFileTypeJPEG;
+}
+
+
+/* Returns src rotated clockwise by `cw` degrees as a displayable image. */
+static NSImage * SCRotatedImage(NSImage * src, NSInteger cw)
+{
+	cw = ((cw % 360) + 360) % 360;
+	if(cw == 0 || !src)
+	{
+		return src;
+	}
+	NSSize s = [src size];
+	NSSize ts = (cw == 90 || cw == 270) ? NSMakeSize(s.height, s.width) : s;
+	NSImage * out = [[[NSImage alloc] initWithSize: ts] autorelease];
+	[out lockFocus];
+	[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
+	NSAffineTransform * t = [NSAffineTransform transform];
+	[t translateXBy: ts.width / 2.0 yBy: ts.height / 2.0];
+	[t rotateByDegrees: -cw];
+	[t concat];
+	[src drawInRect: NSMakeRect(-s.width / 2.0, -s.height / 2.0, s.width, s.height)
+		   fromRect: NSZeroRect
+		  operation: NSCompositingOperationSourceOver
+		   fraction: 1.0];
+	[out unlockFocus];
+	return out;
+}
+
+
+/* Returns src image data rotated clockwise by `cw`, re-encoded in the
+   image format implied by `ext` (so the file/entry keeps its type). */
+static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
+{
+	cw = ((cw % 360) + 360) % 360;
+	if(!src || cw == 0)
+	{
+		return src;
+	}
+	NSBitmapImageRep * rep = [NSBitmapImageRep imageRepWithData: src];
+	if(!rep)
+	{
+		return nil;
+	}
+	NSInteger w = [rep pixelsWide];
+	NSInteger h = [rep pixelsHigh];
+	NSSize ts = (cw == 90 || cw == 270) ? NSMakeSize(h, w) : NSMakeSize(w, h);
+	NSImage * img = [[[NSImage alloc] initWithSize: ts] autorelease];
+	[img lockFocus];
+	[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
+	NSAffineTransform * t = [NSAffineTransform transform];
+	[t translateXBy: ts.width / 2.0 yBy: ts.height / 2.0];
+	[t rotateByDegrees: -cw];
+	[t concat];
+	[rep drawInRect: NSMakeRect(-w / 2.0, -h / 2.0, w, h)];
+	NSBitmapImageRep * outRep = [[[NSBitmapImageRep alloc]
+		initWithFocusedViewRect: NSMakeRect(0, 0, ts.width, ts.height)] autorelease];
+	[img unlockFocus];
+	if(!outRep)
+	{
+		return nil;
+	}
+	NSBitmapImageFileType ft = SCBitmapFileType(ext);
+	NSDictionary * props = (ft == NSBitmapImageFileTypeJPEG)
+		? @{ NSImageCompressionFactor: @0.9 } : @{};
+	return [outRep representationUsingType: ft properties: props];
+}
+
+
+- (NSInteger)pendingRotationForPage:(TSSTPage *)page
+{
+	TSSTManagedGroup * group = [page valueForKey: @"group"];
+	NSString * entry = [page valueForKey: @"imagePath"];
+	if([group isKindOfClass: [TSSTManagedArchive class]])
+	{
+		NSString * ap = [group valueForKey: @"path"];
+		return ap && entry ? [pendingArchiveRotations[ap][entry] integerValue] : 0;
+	}
+	return entry ? [pendingFolderRotations[entry] integerValue] : 0;
+}
+
+
+- (void)recordRotationDelta:(NSInteger)delta
+{
+	NSArray * pages = [pageController arrangedObjects];
+	NSInteger idx = [pageController selectionIndex];
+	if(idx < 0 || idx >= (NSInteger)[pages count])
+	{
+		NSBeep();
+		return;
+	}
+	TSSTPage * page = pages[idx];
+	if([[page valueForKey: @"text"] boolValue])
+	{
+		NSBeep();
+		return;
+	}
+
+	TSSTManagedGroup * group = [page valueForKey: @"group"];
+	NSString * entry = [page valueForKey: @"imagePath"];
+
+	if([group isKindOfClass: [TSSTManagedArchive class]])
+	{
+		NSString * ap = [group valueForKey: @"path"];
+		NSString * ext = [[ap pathExtension] lowercaseString];
+		if(!([ext isEqualToString: @"zip"] || [ext isEqualToString: @"cbz"]))
+		{
+			NSAlert * a = [[[NSAlert alloc] init] autorelease];
+			[a setMessageText: @"회전 저장을 지원하지 않는 형식"];
+			[a setInformativeText: @"페이지 회전 저장은 CBZ/ZIP 아카이브와 폴더에서만 가능합니다."];
+			[a addButtonWithTitle: @"확인"];
+			[a runModal];
+			return;
+		}
+		if(!ap || !entry)
+		{
+			NSBeep();
+			return;
+		}
+		NSMutableDictionary * m = pendingArchiveRotations[ap];
+		if(!m)
+		{
+			m = [NSMutableDictionary dictionary];
+			pendingArchiveRotations[ap] = m;
+		}
+		NSInteger nv = (([m[entry] integerValue] + delta) % 360 + 360) % 360;
+		if(nv == 0) { [m removeObjectForKey: entry]; }
+		else        { m[entry] = @(nv); }
+		if([m count] == 0) { [pendingArchiveRotations removeObjectForKey: ap]; }
+	}
+	else if(entry && [entry isAbsolutePath])
+	{
+		NSInteger nv = (([pendingFolderRotations[entry] integerValue] + delta) % 360 + 360) % 360;
+		if(nv == 0) { [pendingFolderRotations removeObjectForKey: entry]; }
+		else        { pendingFolderRotations[entry] = @(nv); }
+	}
+	else
+	{
+		NSBeep();
+		return;
+	}
+
+	[pagedImageCache removeObjectForKey: @(idx)];
+	[self changeViewImages];
+}
+
+
+- (IBAction)rotateSavePageRight:(id)sender
+{
+	[self recordRotationDelta: 90];
+}
+
+
+- (IBAction)rotateSavePageLeft:(id)sender
+{
+	[self recordRotationDelta: -90];
+}
+
+
+- (BOOL)hasPendingArchiveEdits
+{
+	return [pendingArchiveDeletes count] > 0 || [pendingFolderDeletes count] > 0
+		|| [pendingArchiveRotations count] > 0 || [pendingFolderRotations count] > 0;
+}
+
+
+- (void)commitPendingRotations
+{
+	NSFileManager * fm = [NSFileManager defaultManager];
+
+	for(NSString * path in [pendingFolderRotations allKeys])
+	{
+		NSInteger deg = [pendingFolderRotations[path] integerValue];
+		if(deg == 0 || ![fm fileExistsAtPath: path]) continue;
+		NSData * rotated = SCRotatedImageData([NSData dataWithContentsOfFile: path],
+											  deg, [path pathExtension]);
+		if(rotated) [rotated writeToFile: path atomically: YES];
+	}
+	[pendingFolderRotations removeAllObjects];
+
+	if([pendingArchiveRotations count] == 0)
+	{
+		return;
+	}
+
+	NSMutableDictionary * pathToGroup = [NSMutableDictionary dictionary];
+	for(TSSTPage * p in [pageController arrangedObjects])
+	{
+		TSSTManagedGroup * g = [p valueForKey: @"group"];
+		if([g isKindOfClass: [TSSTManagedArchive class]])
+		{
+			NSString * gp = [g valueForKey: @"path"];
+			if(gp && !pathToGroup[gp]) pathToGroup[gp] = g;
+		}
+	}
+
+	for(NSString * archivePath in [pendingArchiveRotations allKeys])
+	{
+		NSDictionary * entries = pendingArchiveRotations[archivePath];
+		if(![entries count] || ![fm fileExistsAtPath: archivePath]) continue;
+
+		NSString * tmpRoot = [NSTemporaryDirectory()
+			stringByAppendingPathComponent: [[NSProcessInfo processInfo] globallyUniqueString]];
+		[fm createDirectoryAtPath: tmpRoot withIntermediateDirectories: YES attributes: nil error: NULL];
+
+		XADArchive * ar = [[[XADArchive alloc] initWithFile: archivePath delegate: nil error: NULL] autorelease];
+		NSInteger n = ar ? [ar numberOfEntries] : 0;
+		NSMutableArray * written = [NSMutableArray array];
+		for(NSInteger i = 0; i < n; i++)
+		{
+			if([ar entryIsDirectory: (int)i]) continue;
+			NSString * name = [ar nameOfEntry: (int)i];
+			NSNumber * degN = name ? entries[name] : nil;
+			if(!degN) continue;
+			NSData * rotated = SCRotatedImageData([ar contentsOfEntry: (int)i],
+												  [degN integerValue], [name pathExtension]);
+			if(!rotated) continue;
+			NSString * dest = [tmpRoot stringByAppendingPathComponent: name];
+			[fm createDirectoryAtPath: [dest stringByDeletingLastPathComponent]
+		  withIntermediateDirectories: YES attributes: nil error: NULL];
+			if([rotated writeToFile: dest atomically: YES]) [written addObject: name];
+		}
+
+		if([written count] > 0)
+		{
+			NSTask * task = [[[NSTask alloc] init] autorelease];
+			[task setLaunchPath: @"/usr/bin/zip"];
+			[task setCurrentDirectoryPath: tmpRoot];
+			NSMutableArray * args = [NSMutableArray arrayWithObjects: @"-X", archivePath, nil];
+			[args addObjectsFromArray: written];
+			[task setArguments: args];
+			[task setStandardOutput: [NSPipe pipe]];
+			[task setStandardError: [NSPipe pipe]];
+			@try { [task launch]; [task waitUntilExit]; }
+			@catch(NSException * e) { NSLog(@"zip rotate task for %@: %@", archivePath, e); }
+
+			TSSTManagedArchive * group = pathToGroup[archivePath];
+			if(group) [group invalidateInstance];
+		}
+
+		[fm removeItemAtPath: tmpRoot error: NULL];
+	}
+	[pendingArchiveRotations removeAllObjects];
+	[self clearPagedCache];
 }
 
 
@@ -2157,6 +2437,8 @@ images are currently visible and then skips over them.
 {
 	[pendingFolderDeletes removeAllObjects];
 	[pendingArchiveDeletes removeAllObjects];
+	[pendingFolderRotations removeAllObjects];
+	[pendingArchiveRotations removeAllObjects];
 	[[self managedObjectContext] rollback];
 }
 

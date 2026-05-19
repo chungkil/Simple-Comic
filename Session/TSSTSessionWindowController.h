@@ -134,6 +134,12 @@ enum PageSelectionMode {
 	   mutable arrays of in-archive entry names. */
 	NSMutableArray      * pendingFolderDeletes;
 	NSMutableDictionary * pendingArchiveDeletes;
+
+	/* Per-session pending page rotations, applied to the source on close.
+	   pendingFolderRotations: loose-file path -> clockwise degrees.
+	   pendingArchiveRotations: archive path -> { entry name -> degrees }. */
+	NSMutableDictionary * pendingFolderRotations;
+	NSMutableDictionary * pendingArchiveRotations;
 }
 
 @property (retain) NSArray * pageSortDescriptor;
@@ -182,6 +188,8 @@ enum PageSelectionMode {
 - (IBAction)goToPage:(id)sender;
 
 - (IBAction)removePages:(id)sender;
+- (IBAction)rotateSavePageRight:(id)sender;
+- (IBAction)rotateSavePageLeft:(id)sender;
 - (IBAction)setArchiveIcon:(id)sender;
 - (IBAction)extractPage:(id)sender;
 
@@ -194,6 +202,8 @@ enum PageSelectionMode {
 
 - (void)commitPendingDeletions;
 - (void)discardPendingDeletions;
+- (void)commitPendingRotations;
+- (BOOL)hasPendingArchiveEdits;
 
 - (NSImage *)imageForPageAtIndex:(int)index;
 - (NSString *)nameForPageAtIndex:(int)index;

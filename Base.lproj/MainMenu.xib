@@ -114,6 +114,17 @@ CA
                                     <action selector="removePages:" target="-1" id="993"/>
                                 </connections>
                             </menuItem>
+                            <menuItem isSeparatorItem="YES" id="scRot0000"/>
+                            <menuItem title="Rotate Page Right (Save on Close)" keyEquivalent="" id="scRot0001">
+                                <connections>
+                                    <action selector="rotateSavePageRight:" target="-1" id="scRot0002"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Rotate Page Left (Save on Close)" keyEquivalent="" id="scRot0003">
+                                <connections>
+                                    <action selector="rotateSavePageLeft:" target="-1" id="scRot0004"/>
+                                </connections>
+                            </menuItem>
                         </items>
                     </menu>
                 </menuItem>
