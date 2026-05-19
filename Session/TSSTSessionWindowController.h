@@ -204,6 +204,8 @@ enum PageSelectionMode {
 - (void)discardPendingDeletions;
 - (void)commitPendingRotations;
 - (BOOL)hasPendingArchiveEdits;
+- (NSInteger)pendingRotationForPage:(TSSTPage *)page;
+- (NSImage *)rotatedImageIfNeeded:(NSImage *)image forPage:(TSSTPage *)page;
 
 - (NSImage *)imageForPageAtIndex:(int)index;
 - (NSString *)nameForPageAtIndex:(int)index;

@@ -2147,6 +2147,17 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 }
 
 
+- (NSImage *)rotatedImageIfNeeded:(NSImage *)image forPage:(TSSTPage *)page
+{
+	if(!image)
+	{
+		return image;
+	}
+	NSInteger r = [self pendingRotationForPage: page];
+	return r ? SCRotatedImage(image, r) : image;
+}
+
+
 - (void)recordRotationDelta:(NSInteger)delta
 {
 	NSArray * pages = [pageController arrangedObjects];
@@ -2209,6 +2220,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 
 	[pagedImageCache removeObjectForKey: @(idx)];
 	[self changeViewImages];
+	if([self isWebtoonMode] && webtoonView)
+	{
+		[webtoonView relayoutPreservingAnchor];
+	}
 }
 
 

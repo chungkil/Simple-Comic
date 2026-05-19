@@ -145,16 +145,63 @@ static const NSInteger SCPrefetchBehind = 1;
 }
 
 
-/* Pixel width of the widest measured page; the strip is scaled so this
-   page exactly fills the viewport width. */
+/* Pending per-page rotation (clockwise degrees) owned by the session
+   controller, so live preview matches what will be saved on close. */
+- (NSInteger)rotationForIndex:(NSUInteger)index
+{
+    if(index >= pageCount || !sessionController)
+    {
+        return 0;
+    }
+    NSInteger r = [sessionController pendingRotationForPage: [pages objectAtIndex: index]];
+    return ((r % 360) + 360) % 360;
+}
+
+
+/* Measured pixel size with the pending rotation applied (90/270 swap
+   width and height, changing the page's footprint in the strip). */
+- (void)effectiveWidth:(CGFloat *)outW height:(CGFloat *)outH forIndex:(NSUInteger)index
+{
+    CGFloat w = pageWidths[index];
+    CGFloat h = pageHeights[index];
+    NSInteger r = [self rotationForIndex: index];
+    if(r == 90 || r == 270)
+    {
+        CGFloat t = w; w = h; h = t;
+    }
+    *outW = w;
+    *outH = h;
+}
+
+
+/* base rotated to match the page's pending rotation (or base if none). */
+- (NSImage *)displayImage:(NSImage *)base forIndex:(NSUInteger)index
+{
+    if(!base || !sessionController || [self rotationForIndex: index] == 0)
+    {
+        return base;
+    }
+    NSImage * rotated = [sessionController rotatedImageIfNeeded: base
+                                                        forPage: [pages objectAtIndex: index]];
+    return rotated ? rotated : base;
+}
+
+
+/* Width of the widest measured page (rotation-aware); the strip is
+   scaled so this page exactly fills the viewport width. */
 - (CGFloat)widestMeasuredWidth
 {
     CGFloat widest = 0.0f;
     for(NSUInteger i = 0; i < pageCount; ++i)
     {
-        if(pageMeasured[i] && pageWidths[i] > widest)
+        if(pageMeasured[i])
         {
-            widest = pageWidths[i];
+            CGFloat w, h;
+            [self effectiveWidth: &w height: &h forIndex: i];
+            if(w > widest)
+            {
+                widest = w;
+            }
         }
     }
     return widest;
@@ -183,9 +230,11 @@ static const NSInteger SCPrefetchBehind = 1;
     for(NSUInteger i = 0; i < pageCount; ++i)
     {
         CGFloat height;
-        if(pageMeasured[i] && layoutScale > 0.0f && pageHeights[i] > 0.0f)
+        CGFloat effW, effH;
+        [self effectiveWidth: &effW height: &effH forIndex: i];
+        if(pageMeasured[i] && layoutScale > 0.0f && effH > 0.0f)
         {
-            height = pageHeights[i] * layoutScale;
+            height = effH * layoutScale;
         }
         else
         {
@@ -252,9 +301,11 @@ static const NSInteger SCPrefetchBehind = 1;
     CGFloat height = pageOffsets[index + 1] - top;
 
     CGFloat displayWidth;
-    if(pageMeasured[index] && layoutScale > 0.0f && pageWidths[index] > 0.0f)
+    CGFloat effW, effH;
+    [self effectiveWidth: &effW height: &effH forIndex: index];
+    if(pageMeasured[index] && layoutScale > 0.0f && effW > 0.0f)
     {
-        displayWidth = pageWidths[index] * layoutScale;
+        displayWidth = effW * layoutScale;
         if(displayWidth > viewWidth)
         {
             displayWidth = viewWidth;
@@ -352,12 +403,12 @@ static const NSInteger SCPrefetchBehind = 1;
         NSImage * image = [imageCache objectForKey: @(i)];
         if(image)
         {
-            [image drawInRect: pageRect
-                     fromRect: NSZeroRect
-                    operation: NSCompositingOperationSourceOver
-                     fraction: 1.0
-               respectFlipped: YES
-                        hints: nil];
+            [[self displayImage: image forIndex: i] drawInRect: pageRect
+                                                       fromRect: NSZeroRect
+                                                      operation: NSCompositingOperationSourceOver
+                                                       fraction: 1.0
+                                                 respectFlipped: YES
+                                                          hints: nil];
         }
         else
         {
@@ -583,12 +634,12 @@ static const NSInteger SCPrefetchBehind = 1;
         CGFloat dstY = loupeSize.height - (NSMaxY(pr) - NSMinY(src)) * power;
         CGFloat dstH = NSHeight(pr) * power;
 
-        [image drawInRect: NSMakeRect(dstX, dstY, dstW, dstH)
-                 fromRect: NSZeroRect
-                operation: NSCompositingOperationSourceOver
-                 fraction: 1.0
-           respectFlipped: YES
-                    hints: nil];
+        [[self displayImage: image forIndex: i] drawInRect: NSMakeRect(dstX, dstY, dstW, dstH)
+                                                   fromRect: NSZeroRect
+                                                  operation: NSCompositingOperationSourceOver
+                                                   fraction: 1.0
+                                             respectFlipped: YES
+                                                      hints: nil];
     }
 
     [out unlockFocus];
