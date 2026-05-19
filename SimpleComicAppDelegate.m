@@ -30,6 +30,7 @@
 #import "SimpleComicAppDelegate.h"
 #import <XADMaster/XADArchive.h>
 #import "TSSTSessionWindowController.h"
+#import "SCProgressStore.h"
 #import "TSSTSortDescriptor.h"
 #import "TSSTPage.h"
 #import "TSSTManagedGroup.h"
@@ -287,6 +288,86 @@ static NSArray * allAvailableStringEncodings(void)
 		[launchFiles release];
 		launchFiles = nil;
 	}
+
+	/* The Bookmarks menu is rebuilt on demand from the front work's
+	   saved record, so its contents follow whichever window is active. */
+	for(NSMenuItem * item in [[NSApp mainMenu] itemArray])
+	{
+		if([[[item submenu] title] isEqualToString: @"Bookmarks"])
+		{
+			[[item submenu] setDelegate: self];
+			[[item submenu] setAutoenablesItems: NO];
+			break;
+		}
+	}
+}
+
+
+- (TSSTSessionWindowController *)activeSessionController
+{
+	id controller = [[NSApp mainWindow] windowController];
+	if(![controller isKindOfClass: [TSSTSessionWindowController class]])
+	{
+		controller = [[NSApp keyWindow] windowController];
+	}
+	return [controller isKindOfClass: [TSSTSessionWindowController class]] ? controller : nil;
+}
+
+
+- (void)menuNeedsUpdate:(NSMenu *)menu
+{
+	if(![[menu title] isEqualToString: @"Bookmarks"])
+	{
+		return;
+	}
+
+	[menu removeAllItems];
+
+	NSMenuItem * addItem = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Add Bookmark…", @"")
+													   action: @selector(addBookmark:)
+												keyEquivalent: @"b"] autorelease];
+	[menu addItem: addItem];
+
+	NSMenuItem * clearItem = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"Remove All Bookmarks", @"")
+														 action: @selector(removeAllBookmarks:)
+												  keyEquivalent: @""] autorelease];
+	[menu addItem: clearItem];
+
+	TSSTSessionWindowController * controller = [self activeSessionController];
+	NSString * key = [controller workIdentifier];
+	NSArray * bookmarks = [key length] ? [[SCProgressStore sharedStore] bookmarksForKey: key] : @[];
+
+	[menu addItem: [NSMenuItem separatorItem]];
+
+	if([bookmarks count] == 0)
+	{
+		NSMenuItem * empty = [[[NSMenuItem alloc] initWithTitle: NSLocalizedString(@"No Bookmarks", @"")
+														 action: NULL
+												  keyEquivalent: @""] autorelease];
+		[empty setEnabled: NO];
+		[menu addItem: empty];
+		return;
+	}
+
+	for(NSDictionary * mark in bookmarks)
+	{
+		NSInteger page = [[mark objectForKey: @"page"] integerValue];
+		NSString * title = [NSString stringWithFormat: @"%@  (%ld)",
+							 [mark objectForKey: @"name"], (long)(page + 1)];
+		NSMenuItem * item = [[[NSMenuItem alloc] initWithTitle: title
+														action: @selector(bookmarkSelected:)
+												 keyEquivalent: @""] autorelease];
+		[item setTarget: self];
+		[item setRepresentedObject: @(page)];
+		[menu addItem: item];
+	}
+}
+
+
+- (void)bookmarkSelected:(id)sender
+{
+	TSSTSessionWindowController * controller = [self activeSessionController];
+	[controller jumpToPageIndex: [[sender representedObject] integerValue]];
 }
 
 

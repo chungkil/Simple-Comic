@@ -34,6 +34,7 @@
 #import "TSSTSessionWindowController.h"
 #import "TSSTPageView.h"
 #import "SCWebtoonView.h"
+#import "SCProgressStore.h"
 #import "TSSTSortDescriptor.h"
 #import "TSSTImageUtilities.h"
 #import "TSSTPage.h"
@@ -97,6 +98,8 @@
     {
 		pageTurn = 0;
 		pageSelectionInProgress = None;
+		layoutModeOverride = -1;
+		progressRestored = NO;
 		mouseMovedTimer = nil;
 //		closing = NO;
 		pendingFolderDeletes = [[NSMutableArray alloc] init];
@@ -481,15 +484,164 @@
 
 - (IBAction)toggleWebtoonMode:(id)sender
 {
-    NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
-    BOOL mode = ![[defaults valueForKey: TSSTWebtoonMode] boolValue];
-    [defaults setBool: mode forKey: TSSTWebtoonMode];
+    layoutModeOverride = [self isWebtoonMode] ? 0 : 1;
+    [self applyLayoutMode];
+    [self persistProgress];
 }
 
 
 - (BOOL)isWebtoonMode
 {
+    if(layoutModeOverride >= 0)
+    {
+        return layoutModeOverride == 1;
+    }
     return [[[NSUserDefaults standardUserDefaults] valueForKey: TSSTWebtoonMode] boolValue];
+}
+
+
+- (NSString *)workIdentifier
+{
+    if([[pageController arrangedObjects] count] <= 0)
+    {
+        return nil;
+    }
+    TSSTPage * page = [pageController arrangedObjects][0];
+    NSString * path = [page valueForKey: @"group"] ?
+        [page valueForKeyPath: @"group.topLevelGroup.path"] :
+        [page valueForKeyPath: @"imagePath"];
+    return path;
+}
+
+
+- (void)persistProgress
+{
+    if(!progressRestored)
+    {
+        return;
+    }
+    NSString * key = [self workIdentifier];
+    if([key length] == 0)
+    {
+        return;
+    }
+    NSInteger page = [pageController selectionIndex];
+    CGFloat scrollY = ([self isWebtoonMode] && webtoonView) ? NSMinY([webtoonView visibleRect]) : 0.0f;
+    [[SCProgressStore sharedStore] setLastPage: page
+                                       scrollY: scrollY
+                                    layoutMode: ([self isWebtoonMode] ? 1 : 0)
+                                        forKey: key];
+}
+
+
+- (void)restoreProgress
+{
+    NSString * key = [self workIdentifier];
+    NSDictionary * record = [key length] ? [[SCProgressStore sharedStore] recordForKey: key] : nil;
+
+    if(record)
+    {
+        id modeVal = [record objectForKey: @"layoutMode"];
+        if(modeVal)
+        {
+            layoutModeOverride = [modeVal intValue] == 1 ? 1 : 0;
+        }
+
+        NSInteger count = [[pageController arrangedObjects] count];
+        id pageVal = [record objectForKey: @"lastPage"];
+        if(pageVal && count > 0)
+        {
+            NSInteger p = [pageVal integerValue];
+            if(p < 0)
+            {
+                p = 0;
+            }
+            if(p >= count)
+            {
+                p = count - 1;
+            }
+            [pageController setSelectionIndex: p];
+        }
+
+        [self applyLayoutMode];
+
+        if([self isWebtoonMode] && webtoonView)
+        {
+            id yVal = [record objectForKey: @"scrollY"];
+            if(yVal && [yVal doubleValue] > 0.0)
+            {
+                [webtoonView scrollPoint: NSMakePoint(0.0, [yVal doubleValue])];
+            }
+        }
+    }
+    else if([self isWebtoonMode])
+    {
+        [self applyLayoutMode];
+    }
+
+    progressRestored = YES;
+}
+
+
+- (void)jumpToPageIndex:(NSInteger)index
+{
+    NSInteger count = [[pageController arrangedObjects] count];
+    if(count <= 0)
+    {
+        return;
+    }
+    if(index < 0)
+    {
+        index = 0;
+    }
+    if(index >= count)
+    {
+        index = count - 1;
+    }
+    [pageController setSelectionIndex: index];
+}
+
+
+- (IBAction)addBookmark:(id)sender
+{
+    NSString * key = [self workIdentifier];
+    if([key length] == 0)
+    {
+        return;
+    }
+    NSInteger page = [pageController selectionIndex];
+    NSString * suggested = [NSString stringWithFormat: NSLocalizedString(@"Page %ld", @"Default bookmark name"), (long)(page + 1)];
+
+    NSAlert * alert = [[[NSAlert alloc] init] autorelease];
+    [alert setMessageText: NSLocalizedString(@"Add Bookmark", @"Add bookmark alert title")];
+    [alert setInformativeText: NSLocalizedString(@"Name this bookmark:", @"Add bookmark prompt")];
+    [alert addButtonWithTitle: NSLocalizedString(@"Add", @"Add bookmark confirm")];
+    [alert addButtonWithTitle: NSLocalizedString(@"Cancel", @"Cancel")];
+
+    NSTextField * field = [[[NSTextField alloc] initWithFrame: NSMakeRect(0, 0, 240, 24)] autorelease];
+    [field setStringValue: suggested];
+    [alert setAccessoryView: field];
+
+    if([alert runModal] == NSAlertFirstButtonReturn)
+    {
+        NSString * name = [field stringValue];
+        if([name length] == 0)
+        {
+            name = suggested;
+        }
+        [[SCProgressStore sharedStore] addBookmarkName: name page: page forKey: key];
+    }
+}
+
+
+- (IBAction)removeAllBookmarks:(id)sender
+{
+    NSString * key = [self workIdentifier];
+    if([key length] == 0)
+    {
+        return;
+    }
+    [[SCProgressStore sharedStore] removeAllBookmarksForKey: key];
 }
 
 
@@ -1151,10 +1303,7 @@
         [pageView correctViewPoint];
     }
 
-    if([self isWebtoonMode])
-    {
-        [self applyLayoutMode];
-    }
+    [self restoreProgress];
 }
 
 
@@ -1431,6 +1580,8 @@ images are currently visible and then skips over them.
     {
         [session setValue: nil forKey: TSSTScrollPosition ];
     }
+
+    [self persistProgress];
 }
 
 
@@ -1665,6 +1816,7 @@ images are currently visible and then skips over them.
 
 - (void)prepareToEnd
 {
+	[self persistProgress];
 	[[self window] setAcceptsMouseMovedEvents: NO];
 	[mouseMovedTimer invalidate];
 	mouseMovedTimer = nil;

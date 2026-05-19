@@ -74,6 +74,14 @@ enum PageSelectionMode {
 
 	/* Guards the selection <-> webtoon-scroll feedback loop. */
 	BOOL webtoonSyncingSelection;
+
+	/* Per-work layout override: -1 = follow global default, 0 = paged,
+	   1 = webtoon.  Set when the user toggles or a saved record restores. */
+	NSInteger layoutModeOverride;
+
+	/* YES once a saved per-work record has been applied, so progress is
+	   not persisted from the initial (pre-restore) state. */
+	BOOL progressRestored;
 	/* There is an outlet to this so that the visibility of the 
 		scrollers can be manually controlled. */
     IBOutlet NSScrollView  * pageScrollView;
@@ -137,6 +145,9 @@ enum PageSelectionMode {
 - (IBAction)changeScaling:(id)sender;
 /* Toggles continuous vertical-scroll (webtoon) reading mode */
 - (IBAction)toggleWebtoonMode:(id)sender;
+/* Named-bookmark actions (reach the front session via the responder chain) */
+- (IBAction)addBookmark:(id)sender;
+- (IBAction)removeAllBookmarks:(id)sender;
 
 - (IBAction)zoom:(id)sender;
 - (IBAction)zoomIn:(id)sender;
@@ -194,6 +205,11 @@ enum PageSelectionMode {
 - (BOOL)isWebtoonMode;
 - (void)applyLayoutMode;
 - (void)webtoonScrolledToPageIndex:(NSInteger)index;
+
+- (NSString *)workIdentifier;
+- (void)persistProgress;
+- (void)restoreProgress;
+- (void)jumpToPageIndex:(NSInteger)index;
 
 - (void)resizeWindow;
 - (void)resizeView;

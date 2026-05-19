@@ -316,6 +316,11 @@ DQ
                         </items>
                     </menu>
                 </menuItem>
+                <menuItem title="Bookmarks" id="scBmk0001">
+                    <menu key="submenu" title="Bookmarks" id="scBmk0002">
+                        <items/>
+                    </menu>
+                </menuItem>
                 <menuItem title="Window" id="19">
                     <menu key="submenu" title="Window" systemMenu="window" id="24">
                         <items>
