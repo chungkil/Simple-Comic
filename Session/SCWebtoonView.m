@@ -27,9 +27,11 @@ static const NSInteger SCPrefetchBehind = 1;
     if(self)
     {
         pageOffsets = NULL;
-        pageAspects = NULL;
+        pageWidths = NULL;
+        pageHeights = NULL;
         pageMeasured = NULL;
         pageCount = 0;
+        layoutScale = 0.0f;
         layoutWidth = NSWidth(frameRect) > 1 ? NSWidth(frameRect) : 800;
         reportedPageIndex = -1;
         observingClipView = NO;
@@ -45,7 +47,8 @@ static const NSInteger SCPrefetchBehind = 1;
 - (void)freeLayoutArrays
 {
     free(pageOffsets);  pageOffsets = NULL;
-    free(pageAspects);  pageAspects = NULL;
+    free(pageWidths);   pageWidths = NULL;
+    free(pageHeights);  pageHeights = NULL;
     free(pageMeasured); pageMeasured = NULL;
 }
 
@@ -93,18 +96,24 @@ static const NSInteger SCPrefetchBehind = 1;
     if(pageCount > 0)
     {
         pageOffsets  = (CGFloat *)calloc(pageCount + 1, sizeof(CGFloat));
-        pageAspects  = (CGFloat *)calloc(pageCount, sizeof(CGFloat));
+        pageWidths   = (CGFloat *)calloc(pageCount, sizeof(CGFloat));
+        pageHeights  = (CGFloat *)calloc(pageCount, sizeof(CGFloat));
         pageMeasured = (BOOL *)calloc(pageCount, sizeof(BOOL));
 
         for(NSUInteger i = 0; i < pageCount; ++i)
         {
-            /* Core Data already caches the aspect ratio of any page that
-               has ever been displayed; reuse it so the strip is laid out
+            /* Core Data already caches the pixel size of any page that has
+               ever been displayed; reuse it so the strip is laid out
                correctly without decoding every image up front. */
-            NSNumber * cached = [[pages objectAtIndex: i] valueForKey: @"aspectRatio"];
-            CGFloat aspect = cached ? [cached floatValue] : 0.0f;
-            pageAspects[i] = aspect;
-            pageMeasured[i] = (aspect > 0.0f);
+            TSSTPage * page = [pages objectAtIndex: i];
+            CGFloat w = [[page valueForKey: @"width"] floatValue];
+            CGFloat h = [[page valueForKey: @"height"] floatValue];
+            if(w > 0.0f && h > 0.0f)
+            {
+                pageWidths[i] = w;
+                pageHeights[i] = h;
+                pageMeasured[i] = YES;
+            }
         }
     }
 
@@ -135,10 +144,19 @@ static const NSInteger SCPrefetchBehind = 1;
 }
 
 
-- (CGFloat)effectiveAspectForIndex:(NSUInteger)index
+/* Pixel width of the widest measured page; the strip is scaled so this
+   page exactly fills the viewport width. */
+- (CGFloat)widestMeasuredWidth
 {
-    CGFloat aspect = pageAspects[index];
-    return aspect > 0.0f ? aspect : SCDefaultAspect;
+    CGFloat widest = 0.0f;
+    for(NSUInteger i = 0; i < pageCount; ++i)
+    {
+        if(pageMeasured[i] && pageWidths[i] > widest)
+        {
+            widest = pageWidths[i];
+        }
+    }
+    return widest;
 }
 
 
@@ -152,14 +170,27 @@ static const NSInteger SCPrefetchBehind = 1;
 
     if(pageCount == 0 || pageOffsets == NULL)
     {
+        layoutScale = 0.0f;
         [self setFrameSize: NSMakeSize(width, 1)];
         return;
     }
 
+    CGFloat widest = [self widestMeasuredWidth];
+    layoutScale = widest > 0.0f ? (width / widest) : 0.0f;
+
     pageOffsets[0] = 0.0f;
     for(NSUInteger i = 0; i < pageCount; ++i)
     {
-        CGFloat height = width / [self effectiveAspectForIndex: i];
+        CGFloat height;
+        if(pageMeasured[i] && layoutScale > 0.0f && pageHeights[i] > 0.0f)
+        {
+            height = pageHeights[i] * layoutScale;
+        }
+        else
+        {
+            /* Full-width placeholder until the real size is known. */
+            height = width / SCDefaultAspect;
+        }
         if(!isfinite(height) || height < 1.0f)
         {
             height = width / SCDefaultAspect;
@@ -215,9 +246,26 @@ static const NSInteger SCPrefetchBehind = 1;
     {
         return NSZeroRect;
     }
+    CGFloat viewWidth = NSWidth([self bounds]);
     CGFloat top = pageOffsets[index];
     CGFloat height = pageOffsets[index + 1] - top;
-    return NSMakeRect(0.0f, top, NSWidth([self bounds]), height);
+
+    CGFloat displayWidth;
+    if(pageMeasured[index] && layoutScale > 0.0f && pageWidths[index] > 0.0f)
+    {
+        displayWidth = pageWidths[index] * layoutScale;
+        if(displayWidth > viewWidth)
+        {
+            displayWidth = viewWidth;
+        }
+    }
+    else
+    {
+        displayWidth = viewWidth;
+    }
+
+    CGFloat x = (viewWidth - displayWidth) * 0.5f;
+    return NSMakeRect(x, top, displayWidth, height);
 }
 
 
@@ -356,19 +404,21 @@ static const NSInteger SCPrefetchBehind = 1;
         {
             NSData * data = [page pageData];
             NSImage * image = nil;
-            CGFloat aspect = 0.0f;
+            CGFloat pixelWidth = 0.0f;
+            CGFloat pixelHeight = 0.0f;
 
             if(data)
             {
                 image = [[NSImage alloc] initWithData: data];
                 NSArray * reps = [image representations];
                 NSImageRep * rep = [reps count] ? [reps objectAtIndex: 0] : nil;
-                NSInteger pixelWidth = rep ? [rep pixelsWide] : 0;
-                NSInteger pixelHeight = rep ? [rep pixelsHigh] : 0;
+                NSInteger pw = rep ? [rep pixelsWide] : 0;
+                NSInteger ph = rep ? [rep pixelsHigh] : 0;
 
-                if(image && pixelWidth > 0 && pixelHeight > 0)
+                if(image && pw > 0 && ph > 0)
                 {
-                    aspect = (CGFloat)pixelWidth / (CGFloat)pixelHeight;
+                    pixelWidth = (CGFloat)pw;
+                    pixelHeight = (CGFloat)ph;
                     [image setCacheMode: NSImageCacheNever];
                     [image setSize: NSMakeSize(pixelWidth, pixelHeight)];
                 }
@@ -394,18 +444,15 @@ static const NSInteger SCPrefetchBehind = 1;
                     [imageCache setObject: image forKey: @(index)];
 
                     BOOL layoutChanged = NO;
-                    if(aspect > 0.0f && !pageMeasured[index])
+                    if(pixelWidth > 0.0f && pixelHeight > 0.0f && !pageMeasured[index])
                     {
                         pageMeasured[index] = YES;
-                        if(fabs(pageAspects[index] - aspect) > 0.001f)
-                        {
-                            pageAspects[index] = aspect;
-                            layoutChanged = YES;
-                        }
-                        else
-                        {
-                            pageAspects[index] = aspect;
-                        }
+                        pageWidths[index] = pixelWidth;
+                        pageHeights[index] = pixelHeight;
+                        /* A newly measured page changes its own height and
+                           may set a new widest-page reference, so the whole
+                           strip is relaid out around the current anchor. */
+                        layoutChanged = YES;
                     }
 
                     if(layoutChanged)

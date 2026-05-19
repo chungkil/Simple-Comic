@@ -18,9 +18,15 @@
     TSSTSessionWindowController * sessionController;   /* assign (back reference) */
 
     CGFloat * pageOffsets;                            /* pageCount + 1 cumulative tops */
-    CGFloat * pageAspects;                            /* width / height per page (0 = unknown) */
-    BOOL    * pageMeasured;                            /* YES once a real image fixed the aspect */
+    CGFloat * pageWidths;                             /* native pixel width per page (0 = unknown) */
+    CGFloat * pageHeights;                            /* native pixel height per page (0 = unknown) */
+    BOOL    * pageMeasured;                            /* YES once a real image fixed the size */
     NSUInteger pageCount;
+
+    /* width / widestPageWidth: every page is drawn at its native pixels
+       times this scale, so the widest page exactly fills the viewport
+       and narrower pages stay proportionally smaller and centered. */
+    CGFloat layoutScale;
 
     NSCache * imageCache;                              /* NSNumber(index) -> NSImage */
     NSMutableIndexSet * loadingPages;                  /* indices with an in-flight decode */
