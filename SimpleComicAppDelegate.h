@@ -61,6 +61,7 @@ extern NSString * TSSTStatusbarVisible;
 extern NSString * TSSTLonelyFirstPage;
 extern NSString * TSSTNestedArchives;
 extern NSString * TSSTUpdateSelection;
+extern NSString * TSSTWebtoonMode;
 extern NSString * TSSTSessionEndNotification;
 
 

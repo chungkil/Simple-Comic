@@ -33,6 +33,7 @@
 #import "SimpleComicAppDelegate.h"
 #import "TSSTSessionWindowController.h"
 #import "TSSTPageView.h"
+#import "SCWebtoonView.h"
 #import "TSSTSortDescriptor.h"
 #import "TSSTImageUtilities.h"
 #import "TSSTPage.h"
@@ -144,6 +145,10 @@
     [defaults addObserver: self forKeyPath: TSSTBackgroundColor options: 0 context: nil];
     [defaults addObserver: self forKeyPath: TSSTLoupeDiameter options: 0 context: nil];
 	[defaults addObserver: self forKeyPath: TSSTLoupePower options: 0 context: nil];
+	[defaults addObserver: self forKeyPath: TSSTWebtoonMode options: 0 context: nil];
+	/* Retained so swapping the scroll view's document view (paged <->
+	   webtoon) never deallocates the xib-owned page view. */
+	[pageView retain];
     [session addObserver: self forKeyPath: TSSTPageOrder options: 0 context: nil];
     [session addObserver: self forKeyPath: TSSTPageScaleOptions options: 0 context: nil];
     [session addObserver: self forKeyPath: TSSTTwoPageSpread options: 0 context: nil];
@@ -189,6 +194,10 @@
     [defaults removeObserver: self forKeyPath: TSSTConstrainScale];
 	[defaults removeObserver: self forKeyPath: TSSTLoupeDiameter];
 	[defaults removeObserver: self forKeyPath: TSSTLoupePower];
+	[defaults removeObserver: self forKeyPath: TSSTWebtoonMode];
+	[webtoonView setSessionController: nil];
+	[webtoonView release];
+	[pageView release];
     [pageController removeObserver: self forKeyPath: @"selectionIndex"];
     [pageController removeObserver: self forKeyPath: @"arrangedObjects.@count"];
     [[NSNotificationCenter defaultCenter] removeObserver: self];
@@ -239,6 +248,10 @@
     else if([keyPath isEqualToString: @"arrangedObjects.@count"])
     {
         [NSThread detachNewThreadSelector: @selector(processThumbs) toTarget: exposeView withObject: nil];
+        if([self isWebtoonMode] && webtoonView)
+        {
+            [webtoonView setPages: [NSArray arrayWithArray: [pageController arrangedObjects]]];
+        }
         [self changeViewImages];
     }
     else if([keyPath isEqualToString: TSSTPageOrder])
@@ -280,7 +293,11 @@
 	{
 		[self refreshLoupePanel];
 	}
-	else 
+	else if([keyPath isEqualToString: TSSTWebtoonMode])
+	{
+		[self applyLayoutMode];
+	}
+	else
 	{
         [self changeViewImages];
     }
@@ -449,6 +466,76 @@
 {
     int scaleType = [sender tag] % 400;
     [session setValue: @(scaleType) forKey: TSSTPageScaleOptions];
+}
+
+
+- (IBAction)toggleWebtoonMode:(id)sender
+{
+    NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
+    BOOL mode = ![[defaults valueForKey: TSSTWebtoonMode] boolValue];
+    [defaults setBool: mode forKey: TSSTWebtoonMode];
+}
+
+
+- (BOOL)isWebtoonMode
+{
+    return [[[NSUserDefaults standardUserDefaults] valueForKey: TSSTWebtoonMode] boolValue];
+}
+
+
+/*  Installs the document view that matches the current reading mode.  In
+    webtoon mode the whole session is presented as one continuous vertical
+    strip; otherwise the original paged compositor is restored. */
+- (void)applyLayoutMode
+{
+    if([[pageController arrangedObjects] count] <= 0)
+    {
+        return;
+    }
+
+    if([self isWebtoonMode])
+    {
+        if(!webtoonView)
+        {
+            webtoonView = [[SCWebtoonView alloc] initWithFrame: [pageScrollView bounds]];
+            [webtoonView setSessionController: self];
+            [webtoonView setAutoresizingMask: NSViewWidthSizable];
+        }
+        [pageScrollView setHasVerticalScroller: YES];
+        [pageScrollView setHasHorizontalScroller: NO];
+        [pageScrollView setDocumentView: webtoonView];
+        [webtoonView setPages: [NSArray arrayWithArray: [pageController arrangedObjects]]];
+        [webtoonView relayoutPreservingAnchor];
+        [webtoonView scrollToPageIndex: [pageController selectionIndex]];
+        [self setValue: [[pageController arrangedObjects][[pageController selectionIndex]] valueForKey: @"name"]
+                forKey: @"pageNames"];
+    }
+    else
+    {
+        [pageScrollView setDocumentView: pageView];
+        [self scaleToWindow];
+        [self changeViewImages];
+        [pageView correctViewPoint];
+    }
+}
+
+
+/*  Called by the webtoon view as it scrolls so that the progress bar and
+    saved selection track the page currently on screen. */
+- (void)webtoonScrolledToPageIndex:(NSInteger)index
+{
+    int count = [[pageController arrangedObjects] count];
+    if(index < 0 || index >= count)
+    {
+        return;
+    }
+    if((NSInteger)[pageController selectionIndex] == index)
+    {
+        return;
+    }
+    webtoonSyncingSelection = YES;
+    [pageController setSelectionIndex: index];
+    webtoonSyncingSelection = NO;
 }
 
 
@@ -1051,14 +1138,48 @@
 		[[self window] zoom: self];
         [pageView correctViewPoint];
     }
+
+    if([self isWebtoonMode])
+    {
+        [self applyLayoutMode];
+    }
 }
 
 
-/*  This method figures out which pages should be displayed in the view.  
+/*  This method figures out which pages should be displayed in the view.
     To do so it looks at which page is currently selected as well as its aspect ratio
     and that of the next image */
 - (void)changeViewImages
 {
+    if([self isWebtoonMode])
+    {
+        int pageNumberCount = [[pageController arrangedObjects] count];
+        if(pageNumberCount <= 0)
+        {
+            return;
+        }
+        int selected = [pageController selectionIndex];
+        if(selected < 0)
+        {
+            selected = 0;
+        }
+        if(selected >= pageNumberCount)
+        {
+            selected = pageNumberCount - 1;
+        }
+        TSSTPage * selectedPage = [pageController arrangedObjects][selected];
+        [self setValue: [selectedPage valueForKey: @"name"] forKey: @"pageNames"];
+        NSString * reprPath = [selectedPage valueForKey: @"group"] ?
+            [selectedPage valueForKeyPath: @"group.topLevelGroup.path"] :
+            [selectedPage valueForKeyPath: @"imagePath"];
+        [[self window] setRepresentedFilename: reprPath ? reprPath : @""];
+        if(!webtoonSyncingSelection)
+        {
+            [webtoonView scrollToPageIndex: selected];
+        }
+        return;
+    }
+
     int count = [[pageController arrangedObjects] count];
     int index = [pageController selectionIndex];
     TSSTPage * pageOne = [pageController arrangedObjects][index];
@@ -1123,6 +1244,14 @@
 
 - (void)scaleToWindow
 {
+    if([self isWebtoonMode])
+    {
+        [pageScrollView setHasVerticalScroller: YES];
+        [pageScrollView setHasHorizontalScroller: NO];
+        [webtoonView relayoutPreservingAnchor];
+        return;
+    }
+
     BOOL hasVert = NO;
     BOOL hasHor = NO;
 	int scaling = [[session valueForKey: TSSTPageScaleOptions] intValue];
@@ -1419,6 +1548,11 @@ images are currently visible and then skips over them.
     else if([menuItem action] == @selector(changeTwoPage:))
     {
         state = [[session valueForKey: TSSTTwoPageSpread] boolValue] ? NSOnState : NSOffState;
+        [menuItem setState: state];
+    }
+    else if([menuItem action] == @selector(toggleWebtoonMode:))
+    {
+        state = [self isWebtoonMode] ? NSOnState : NSOffState;
         [menuItem setState: state];
     }
     else if([menuItem action] == @selector(changePageOrder:))
@@ -1827,6 +1961,11 @@ images are currently visible and then skips over them.
 
 - (void)resizeView
 {
+    if([self isWebtoonMode])
+    {
+        [webtoonView relayoutPreservingAnchor];
+        return;
+    }
     [pageView resizeView];
 }
 

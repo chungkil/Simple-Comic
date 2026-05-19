@@ -77,6 +77,7 @@
 		28F660461067255600EC8A34 /* Help in Resources */ = {isa = PBXBuildFile; fileRef = 28F6603B1067255600EC8A34 /* Help */; };
 		28FA89161094DA53005D6F0C /* TSSTKeyWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = 28F998320A1FF52C0047BD97 /* TSSTKeyWindow.m */; };
 		28FAECCF0C7CA801001D7001 /* TSSTThumbnailView.m in Sources */ = {isa = PBXBuildFile; fileRef = 28FAECCD0C7CA801001D7001 /* TSSTThumbnailView.m */; };
+		5C0AA0010000000000000003 /* SCWebtoonView.m in Sources */ = {isa = PBXBuildFile; fileRef = 5C0AA0010000000000000002 /* SCWebtoonView.m */; };
 		77C8280E06725ACE000B614F /* SimpleComicAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 77C8280C06725ACE000B614F /* SimpleComicAppDelegate.m */; };
 		8D11072D0486CEB800E47090 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.m */; settings = {ATTRIBUTES = (); }; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
@@ -251,6 +252,8 @@
 		28FA4FA50B8AA28000496668 /* TSSTSessionWindowController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TSSTSessionWindowController.m; path = Session/TSSTSessionWindowController.m; sourceTree = "<group>"; };
 		28FAECCC0C7CA801001D7001 /* TSSTThumbnailView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TSSTThumbnailView.h; path = Session/TSSTThumbnailView.h; sourceTree = "<group>"; };
 		28FAECCD0C7CA801001D7001 /* TSSTThumbnailView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TSSTThumbnailView.m; path = Session/TSSTThumbnailView.m; sourceTree = "<group>"; };
+		5C0AA0010000000000000001 /* SCWebtoonView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SCWebtoonView.h; path = Session/SCWebtoonView.h; sourceTree = "<group>"; };
+		5C0AA0010000000000000002 /* SCWebtoonView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = SCWebtoonView.m; path = Session/SCWebtoonView.m; sourceTree = "<group>"; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
@@ -591,6 +594,8 @@
 				28FA4FA50B8AA28000496668 /* TSSTSessionWindowController.m */,
 				28A8EAB00B412DE5006C036D /* TSSTPageView.h */,
 				FA7257EF08A6CE2E006A2A19 /* TSSTPageView.m */,
+				5C0AA0010000000000000001 /* SCWebtoonView.h */,
+				5C0AA0010000000000000002 /* SCWebtoonView.m */,
 				284D3819101249BE00A37AB2 /* DTToolbarItems.h */,
 				284D381A101249BE00A37AB2 /* DTToolbarItems.m */,
 				28B34A711013779A006C551C /* DTWindowCategory.h */,
@@ -836,6 +841,7 @@
 				286BA19E0C4D819400E9D06D /* TSSTInfoWindow.m in Sources */,
 				286BA1A00C4D819400E9D06D /* TSSTImageView.m in Sources */,
 				28FAECCF0C7CA801001D7001 /* TSSTThumbnailView.m in Sources */,
+				5C0AA0010000000000000003 /* SCWebtoonView.m in Sources */,
 				281C0D700CEE6FBA009A9696 /* TSSTBezelWindow.m in Sources */,
 				28C1D4080DF18251003392B4 /* TSSTManagedSession.m in Sources */,
 				28EF3FC00E9970BD002AD2EE /* UKXattrMetadataStore.m in Sources */,

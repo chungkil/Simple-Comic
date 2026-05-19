@@ -31,6 +31,7 @@
 #import "TSSTPageView.h"
 
 @class TSSTPageView;
+@class SCWebtoonView;
 @class TSSTKeyWindow;
 @class TSSTPage;
 @class DTPolishedProgressBar;
@@ -66,6 +67,13 @@ enum PageSelectionMode {
     
     /* Where the pages are composited.  Handles all of the drawing logic */
     IBOutlet TSSTPageView  * pageView;
+
+	/* Continuous vertical-scroll strip used in webtoon mode.  Created
+	   lazily and swapped in as the scroll view's document view. */
+	SCWebtoonView * webtoonView;
+
+	/* Guards the selection <-> webtoon-scroll feedback loop. */
+	BOOL webtoonSyncingSelection;
 	/* There is an outlet to this so that the visibility of the 
 		scrollers can be manually controlled. */
     IBOutlet NSScrollView  * pageScrollView;
@@ -127,6 +135,8 @@ enum PageSelectionMode {
 - (IBAction)changeTwoPage:(id)sender;
 /* Action that changes the view scaling between the three modes */
 - (IBAction)changeScaling:(id)sender;
+/* Toggles continuous vertical-scroll (webtoon) reading mode */
+- (IBAction)toggleWebtoonMode:(id)sender;
 
 - (IBAction)zoom:(id)sender;
 - (IBAction)zoomIn:(id)sender;
@@ -180,6 +190,10 @@ enum PageSelectionMode {
 - (void)infoPanelSetupAtPoint:(NSPoint)point;
 
 - (void)handleMouseDragged:(NSNotification*)notification;
+
+- (BOOL)isWebtoonMode;
+- (void)applyLayoutMode;
+- (void)webtoonScrolledToPageIndex:(NSInteger)index;
 
 - (void)resizeWindow;
 - (void)resizeView;

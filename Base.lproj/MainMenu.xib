@@ -197,6 +197,11 @@ CA
                                     <action selector="changeTwoPage:" target="-1" id="978"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Webtoon Mode" keyEquivalent="j" id="scWebtoon01">
+                                <connections>
+                                    <action selector="toggleWebtoonMode:" target="-1" id="scWebtoon02"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="673">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>

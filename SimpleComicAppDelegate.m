@@ -61,6 +61,7 @@ NSString * TSSTStatusbarVisible =  @"statusBarVisisble";
 NSString * TSSTLonelyFirstPage =   @"lonelyFirstPage";
 NSString * TSSTNestedArchives =	   @"nestedArchives";
 NSString * TSSTUpdateSelection =   @"updateSelection";
+NSString * TSSTWebtoonMode =       @"webtoonMode";
 
 NSString * TSSTSessionEndNotification = @"sessionEnd";
 
@@ -196,7 +197,8 @@ static NSArray * allAvailableStringEncodings(void)
     standardDefaults[TSSTLonelyFirstPage] = @YES;
 	standardDefaults[TSSTNestedArchives] = @YES;
 	standardDefaults[TSSTUpdateSelection] = @0;
-	
+	standardDefaults[TSSTWebtoonMode] = @NO;
+
 	NSUserDefaultsController * sharedDefaultsController = [NSUserDefaultsController sharedUserDefaultsController];
 	[sharedDefaultsController setInitialValues: standardDefaults];
 	NSUserDefaults * defaults = [sharedDefaultsController defaults];
