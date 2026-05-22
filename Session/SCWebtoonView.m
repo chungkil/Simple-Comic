@@ -216,6 +216,14 @@ static const NSInteger SCPrefetchBehind = 1;
     }
     layoutWidth = width;
 
+    NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
+    CGFloat gap = [[defaults valueForKey: TSSTWebtoonGap] floatValue];
+    if(gap < 0.0f) gap = 0.0f;
+    CGFloat maxW = [[defaults valueForKey: TSSTWebtoonMaxWidth] floatValue];
+    CGFloat columnWidth = (maxW > 1.0f && maxW < width) ? maxW : width;
+    layoutColumnWidth = columnWidth;
+    layoutGap = gap;
+
     if(pageCount == 0 || pageOffsets == NULL)
     {
         layoutScale = 0.0f;
@@ -224,7 +232,7 @@ static const NSInteger SCPrefetchBehind = 1;
     }
 
     CGFloat widest = [self widestMeasuredWidth];
-    layoutScale = widest > 0.0f ? (width / widest) : 0.0f;
+    layoutScale = widest > 0.0f ? (columnWidth / widest) : 0.0f;
 
     pageOffsets[0] = 0.0f;
     for(NSUInteger i = 0; i < pageCount; ++i)
@@ -239,13 +247,13 @@ static const NSInteger SCPrefetchBehind = 1;
         else
         {
             /* Full-width placeholder until the real size is known. */
-            height = width / SCDefaultAspect;
+            height = columnWidth / SCDefaultAspect;
         }
         if(!isfinite(height) || height < 1.0f)
         {
-            height = width / SCDefaultAspect;
+            height = columnWidth / SCDefaultAspect;
         }
-        pageOffsets[i + 1] = pageOffsets[i] + height;
+        pageOffsets[i + 1] = pageOffsets[i] + height + ((i + 1 < pageCount) ? gap : 0.0f);
     }
 
     CGFloat total = pageOffsets[pageCount];
@@ -297,8 +305,12 @@ static const NSInteger SCPrefetchBehind = 1;
         return NSZeroRect;
     }
     CGFloat viewWidth = NSWidth([self bounds]);
+    CGFloat column = (layoutColumnWidth > 1.0f && layoutColumnWidth < viewWidth) ? layoutColumnWidth : viewWidth;
     CGFloat top = pageOffsets[index];
-    CGFloat height = pageOffsets[index + 1] - top;
+    /* Slot height includes the trailing inter-page gap; the drawn page
+       excludes it so the gap shows the background. */
+    CGFloat height = pageOffsets[index + 1] - top - ((index + 1 < pageCount) ? layoutGap : 0.0f);
+    if(height < 1.0f) height = 1.0f;
 
     CGFloat displayWidth;
     CGFloat effW, effH;
@@ -306,14 +318,14 @@ static const NSInteger SCPrefetchBehind = 1;
     if(pageMeasured[index] && layoutScale > 0.0f && effW > 0.0f)
     {
         displayWidth = effW * layoutScale;
-        if(displayWidth > viewWidth)
+        if(displayWidth > column)
         {
-            displayWidth = viewWidth;
+            displayWidth = column;
         }
     }
     else
     {
-        displayWidth = viewWidth;
+        displayWidth = column;
     }
 
     CGFloat x = (viewWidth - displayWidth) * 0.5f;

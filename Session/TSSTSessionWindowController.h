@@ -167,6 +167,9 @@ enum PageSelectionMode {
 - (IBAction)changeScaling:(id)sender;
 /* Toggles continuous vertical-scroll (webtoon) reading mode */
 - (IBAction)toggleWebtoonMode:(id)sender;
+/* Webtoon strip display settings (sender.tag carries the value) */
+- (IBAction)changeWebtoonGap:(id)sender;
+- (IBAction)changeWebtoonWidth:(id)sender;
 /* Named-bookmark actions (reach the front session via the responder chain) */
 - (IBAction)addBookmark:(id)sender;
 - (IBAction)removeAllBookmarks:(id)sender;

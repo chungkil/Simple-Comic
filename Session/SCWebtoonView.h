@@ -28,6 +28,11 @@
        and narrower pages stay proportionally smaller and centered. */
     CGFloat layoutScale;
 
+    /* Column width (capped by the max-width setting) the strip is scaled
+       to, and the gap drawn between consecutive pages. */
+    CGFloat layoutColumnWidth;
+    CGFloat layoutGap;
+
     NSCache * imageCache;                              /* NSNumber(index) -> NSImage */
     NSMutableIndexSet * loadingPages;                  /* indices with an in-flight decode */
 

@@ -546,6 +546,26 @@ static void SCSetOrdinalForPage(id page, double v)
 }
 
 
+- (IBAction)changeWebtoonGap:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setInteger: [sender tag] forKey: TSSTWebtoonGap];
+    if([self isWebtoonMode] && webtoonView)
+    {
+        [webtoonView relayoutPreservingAnchor];
+    }
+}
+
+
+- (IBAction)changeWebtoonWidth:(id)sender
+{
+    [[NSUserDefaults standardUserDefaults] setInteger: [sender tag] forKey: TSSTWebtoonMaxWidth];
+    if([self isWebtoonMode] && webtoonView)
+    {
+        [webtoonView relayoutPreservingAnchor];
+    }
+}
+
+
 - (NSString *)workIdentifier
 {
     if([[pageController arrangedObjects] count] <= 0)
@@ -1927,6 +1947,16 @@ images are currently visible and then skips over them.
     else if([menuItem action] == @selector(toggleWebtoonMode:))
     {
         state = [self isWebtoonMode] ? NSOnState : NSOffState;
+        [menuItem setState: state];
+    }
+    else if([menuItem action] == @selector(changeWebtoonGap:))
+    {
+        state = ([[NSUserDefaults standardUserDefaults] integerForKey: TSSTWebtoonGap] == [menuItem tag]) ? NSOnState : NSOffState;
+        [menuItem setState: state];
+    }
+    else if([menuItem action] == @selector(changeWebtoonWidth:))
+    {
+        state = ([[NSUserDefaults standardUserDefaults] integerForKey: TSSTWebtoonMaxWidth] == [menuItem tag]) ? NSOnState : NSOffState;
         [menuItem setState: state];
     }
     else if([menuItem action] == @selector(changePageOrder:))

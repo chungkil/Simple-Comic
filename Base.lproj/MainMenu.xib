@@ -225,6 +225,42 @@ CA
                                     <action selector="toggleWebtoonMode:" target="-1" id="scWebtoon02"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Webtoon Page Gap" id="scWG00">
+                                <menu key="submenu" title="Webtoon Page Gap" id="scWG01">
+                                    <items>
+                                        <menuItem title="None" tag="0" id="scWG02">
+                                            <connections><action selector="changeWebtoonGap:" target="-1" id="scWG03"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Small" tag="8" id="scWG04">
+                                            <connections><action selector="changeWebtoonGap:" target="-1" id="scWG05"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Medium" tag="20" id="scWG06">
+                                            <connections><action selector="changeWebtoonGap:" target="-1" id="scWG07"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Large" tag="40" id="scWG08">
+                                            <connections><action selector="changeWebtoonGap:" target="-1" id="scWG09"/></connections>
+                                        </menuItem>
+                                    </items>
+                                </menu>
+                            </menuItem>
+                            <menuItem title="Webtoon Width" id="scWW00">
+                                <menu key="submenu" title="Webtoon Width" id="scWW01">
+                                    <items>
+                                        <menuItem title="Full Width" tag="0" id="scWW02">
+                                            <connections><action selector="changeWebtoonWidth:" target="-1" id="scWW03"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Wide (1400)" tag="1400" id="scWW04">
+                                            <connections><action selector="changeWebtoonWidth:" target="-1" id="scWW05"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Medium (1000)" tag="1000" id="scWW06">
+                                            <connections><action selector="changeWebtoonWidth:" target="-1" id="scWW07"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Narrow (720)" tag="720" id="scWW08">
+                                            <connections><action selector="changeWebtoonWidth:" target="-1" id="scWW09"/></connections>
+                                        </menuItem>
+                                    </items>
+                                </menu>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="673">
                                 <modifierMask key="keyEquivalentModifierMask" command="YES"/>
                             </menuItem>

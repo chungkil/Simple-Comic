@@ -64,6 +64,8 @@ NSString * TSSTLonelyFirstPage =   @"lonelyFirstPage";
 NSString * TSSTNestedArchives =	   @"nestedArchives";
 NSString * TSSTUpdateSelection =   @"updateSelection";
 NSString * TSSTWebtoonMode =       @"webtoonMode";
+NSString * TSSTWebtoonGap =        @"webtoonGap";
+NSString * TSSTWebtoonMaxWidth =   @"webtoonMaxWidth";
 
 NSString * TSSTSessionEndNotification = @"sessionEnd";
 
@@ -200,6 +202,8 @@ static NSArray * allAvailableStringEncodings(void)
 	standardDefaults[TSSTNestedArchives] = @YES;
 	standardDefaults[TSSTUpdateSelection] = @0;
 	standardDefaults[TSSTWebtoonMode] = @NO;
+	standardDefaults[TSSTWebtoonGap] = @0;
+	standardDefaults[TSSTWebtoonMaxWidth] = @0;
 
 	NSUserDefaultsController * sharedDefaultsController = [NSUserDefaultsController sharedUserDefaultsController];
 	[sharedDefaultsController setInitialValues: standardDefaults];
