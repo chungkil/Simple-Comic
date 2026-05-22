@@ -11,7 +11,8 @@
 #import "TSSTManagedGroup.h"
 #import "TSSTPage.h"
 
-static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
+static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";   /* legacy single folder */
+static NSString * const SCLibraryFoldersKey = @"SCLibraryFolderBookmarks"; /* array of bookmarks */
 static NSString * const SCLibrarySortKey = @"SCLibrarySortMode";
 static NSString * const SCLibraryCoverWidthKey = @"SCLibraryCoverWidth";
 
@@ -204,7 +205,15 @@ static const CGFloat SCMaxCoverWidth = 240.0;
         [chooseButton setAutoresizingMask: NSViewMinYMargin];
         [content addSubview: chooseButton];
 
-        folderLabel = [[NSTextField alloc] initWithFrame: NSMakeRect(170, row1 + 3, NSWidth(cb) - 180, 20)];
+        NSButton * clearButton = [[[NSButton alloc] initWithFrame: NSMakeRect(166, row1, 64, 26)] autorelease];
+        [clearButton setTitle: NSLocalizedString(@"Clear", @"")];
+        [clearButton setBezelStyle: NSBezelStyleRounded];
+        [clearButton setTarget: self];
+        [clearButton setAction: @selector(clearFolders:)];
+        [clearButton setAutoresizingMask: NSViewMinYMargin];
+        [content addSubview: clearButton];
+
+        folderLabel = [[NSTextField alloc] initWithFrame: NSMakeRect(238, row1 + 3, NSWidth(cb) - 248, 20)];
         [folderLabel setEditable: NO];
         [folderLabel setBordered: NO];
         [folderLabel setDrawsBackground: NO];
@@ -266,9 +275,23 @@ static const CGFloat SCMaxCoverWidth = 240.0;
 }
 
 
-- (NSURL *)libraryFolderURL
+/* Stored library-folder bookmarks (array), migrating the legacy single
+   key on first read. */
+- (NSArray *)libraryFolderBookmarks
 {
-    NSData * bm = [[NSUserDefaults standardUserDefaults] objectForKey: SCLibraryFolderKey];
+    NSUserDefaults * d = [NSUserDefaults standardUserDefaults];
+    NSArray * arr = [d arrayForKey: SCLibraryFoldersKey];
+    if([arr count])
+    {
+        return arr;
+    }
+    NSData * legacy = [d objectForKey: SCLibraryFolderKey];
+    return [legacy isKindOfClass: [NSData class]] ? @[legacy] : @[];
+}
+
+
+- (NSURL *)resolveBookmark:(NSData *)bm
+{
     if(![bm isKindOfClass: [NSData class]])
     {
         return nil;
@@ -282,30 +305,23 @@ static const CGFloat SCMaxCoverWidth = 240.0;
 }
 
 
-- (BOOL)folderHasImage:(NSString *)dirPath
+/* Recursively collects works under dir: a directory that directly holds
+   images is itself a work (not descended into); archives at any depth
+   are works; otherwise recurse into subfolders (depth-capped). */
+- (void)collectWorksInDirectory:(NSString *)dir depth:(NSInteger)depth into:(NSMutableArray *)out
 {
-    NSArray * imgExt = [TSSTPage imageExtensions];
-    for(NSString * n in [[NSFileManager defaultManager] contentsOfDirectoryAtPath: dirPath error: NULL])
+    if(depth > 6)
     {
-        if([imgExt containsObject: [[n pathExtension] lowercaseString]])
-        {
-            return YES;
-        }
+        return;
     }
-    return NO;
-}
-
-
-/* Top-level archives and image-containing subfolders of the chosen
-   library folder (caller must hold security-scoped access). */
-- (NSArray *)scannedWorkPathsInFolder:(NSURL *)folder
-{
     NSFileManager * fm = [NSFileManager defaultManager];
-    NSString * dir = [folder path];
-    NSMutableArray * result = [NSMutableArray array];
     NSArray * names = [[fm contentsOfDirectoryAtPath: dir error: NULL]
                        sortedArrayUsingSelector: @selector(localizedStandardCompare:)];
     NSArray * archExt = [TSSTManagedArchive archiveExtensions];
+    NSArray * imgExt = [TSSTPage imageExtensions];
+    BOOL dirHasImage = NO;
+    NSMutableArray * subdirs = [NSMutableArray array];
+
     for(NSString * name in names)
     {
         if([name hasPrefix: @"."]) continue;
@@ -314,14 +330,35 @@ static const CGFloat SCMaxCoverWidth = 240.0;
         if(![fm fileExistsAtPath: full isDirectory: &isDir]) continue;
         if(isDir)
         {
-            if([self folderHasImage: full]) [result addObject: full];
+            [subdirs addObject: full];
         }
-        else if([archExt containsObject: [[name pathExtension] lowercaseString]])
+        else
         {
-            [result addObject: full];
+            NSString * ext = [[name pathExtension] lowercaseString];
+            if([archExt containsObject: ext]) [out addObject: full];
+            else if([imgExt containsObject: ext]) dirHasImage = YES;
         }
     }
-    return result;
+
+    if(dirHasImage)
+    {
+        [out addObject: dir];
+    }
+    else
+    {
+        for(NSString * sub in subdirs)
+        {
+            [self collectWorksInDirectory: sub depth: depth + 1 into: out];
+        }
+    }
+}
+
+
+- (NSArray *)scannedWorkPathsInFolder:(NSURL *)folder
+{
+    NSMutableArray * out = [NSMutableArray array];
+    [self collectWorksInDirectory: [folder path] depth: 0 into: out];
+    return out;
 }
 
 
@@ -341,11 +378,34 @@ static const CGFloat SCMaxCoverWidth = 240.0;
                 includingResourceValuesForKeys: nil
                                  relativeToURL: nil
                                          error: NULL];
-    if(bm)
+    if(!bm)
     {
-        [[NSUserDefaults standardUserDefaults] setObject: bm forKey: SCLibraryFolderKey];
-        [self reload];
+        return;
     }
+
+    NSMutableArray * folders = [NSMutableArray arrayWithArray: [self libraryFolderBookmarks]];
+    /* Dedupe by resolved path. */
+    for(NSData * existing in [self libraryFolderBookmarks])
+    {
+        if([[[self resolveBookmark: existing] path] isEqualToString: [url path]])
+        {
+            return [self reload];
+        }
+    }
+    [folders addObject: bm];
+    NSUserDefaults * d = [NSUserDefaults standardUserDefaults];
+    [d setObject: folders forKey: SCLibraryFoldersKey];
+    [d removeObjectForKey: SCLibraryFolderKey];
+    [self reload];
+}
+
+
+- (IBAction)clearFolders:(id)sender
+{
+    NSUserDefaults * d = [NSUserDefaults standardUserDefaults];
+    [d removeObjectForKey: SCLibraryFoldersKey];
+    [d removeObjectForKey: SCLibraryFolderKey];
+    [self reload];
 }
 
 
@@ -363,9 +423,11 @@ static const CGFloat SCMaxCoverWidth = 240.0;
         }
     }
 
-    NSURL * folder = [self libraryFolderURL];
-    if(folder)
+    NSMutableArray * folderNames = [NSMutableArray array];
+    for(NSData * bm in [self libraryFolderBookmarks])
     {
+        NSURL * folder = [self resolveBookmark: bm];
+        if(!folder) continue;
         BOOL access = [folder startAccessingSecurityScopedResource];
         for(NSString * p in [self scannedWorkPathsInFolder: folder])
         {
@@ -376,7 +438,14 @@ static const CGFloat SCMaxCoverWidth = 240.0;
             }
         }
         if(access) [folder stopAccessingSecurityScopedResource];
-        [folderLabel setStringValue: [folder path]];
+        [folderNames addObject: [folder lastPathComponent]];
+    }
+
+    if([folderNames count])
+    {
+        [folderLabel setStringValue: [NSString stringWithFormat:
+            NSLocalizedString(@"%lu folder(s): %@", @""),
+            (unsigned long)[folderNames count], [folderNames componentsJoinedByString: @", "]]];
     }
     else
     {
