@@ -36,6 +36,7 @@
 #import "SCWebtoonView.h"
 #import "SCProgressStore.h"
 #import "TSSTSortDescriptor.h"
+#import <objc/runtime.h>
 #import "TSSTImageUtilities.h"
 #import "TSSTPage.h"
 #import "TSSTManagedGroup.h"
@@ -49,6 +50,23 @@
 @implementation TSSTSessionWindowController
 
 @synthesize pageTurn, pageNames, pageSortDescriptor;
+
+
+#pragma mark - Per-session page ordinal (drives drag reorder)
+
+
+static const char SCPageOrdinalKey = 'o';
+
+static double SCOrdinalForPage(id page)
+{
+	NSNumber * n = objc_getAssociatedObject(page, &SCPageOrdinalKey);
+	return n ? [n doubleValue] : INFINITY;
+}
+
+static void SCSetOrdinalForPage(id page, double v)
+{
+	objc_setAssociatedObject(page, &SCPageOrdinalKey, @(v), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
 
 
@@ -109,17 +127,32 @@
 		pendingArchiveDeletes = [[NSMutableDictionary alloc] init];
 		pendingFolderRotations = [[NSMutableDictionary alloc] init];
 		pendingArchiveRotations = [[NSMutableDictionary alloc] init];
+		pendingFolderReorders = [[NSMutableDictionary alloc] init];
+		pendingArchiveReorders = [[NSMutableDictionary alloc] init];
         session = [aSession retain];
         BOOL cascade = [session valueForKey: @"position"] ? NO : YES;
         [self setShouldCascadeWindows: cascade];
 		/* Make sure that the session does not start out in fullscreen, nor with the loupe enabled. */
         [session setValue: @NO forKey: @"loupe"];
-		/* Images are sorted by group and then image name. */
-		TSSTSortDescriptor * fileNameSort = [[TSSTSortDescriptor alloc] initWithKey: @"imagePath" ascending: YES];
-		TSSTSortDescriptor * archivePathSort = [[TSSTSortDescriptor alloc] initWithKey: @"group.path" ascending: YES];
-		self.pageSortDescriptor = @[archivePathSort, fileNameSort];
-		[fileNameSort release];
-		[archivePathSort release];
+		/* Pages sort by an attached per-session ordinal (set by reorder),
+		   falling back to natural group + filename order for pages that
+		   have not been reordered (ordinal still unset). */
+		NSSortDescriptor * ordSort = [NSSortDescriptor sortDescriptorWithKey: nil
+																 ascending: YES
+																comparator: ^NSComparisonResult(id a, id b) {
+			double da = SCOrdinalForPage(a);
+			double db = SCOrdinalForPage(b);
+			if(da < db) return NSOrderedAscending;
+			if(da > db) return NSOrderedDescending;
+			NSString * ga = [a valueForKeyPath: @"group.path"] ?: @"";
+			NSString * gb = [b valueForKeyPath: @"group.path"] ?: @"";
+			NSComparisonResult r = [ga localizedStandardCompare: gb];
+			if(r != NSOrderedSame) return r;
+			NSString * ia = [a valueForKey: @"imagePath"] ?: @"";
+			NSString * ib = [b valueForKey: @"imagePath"] ?: @"";
+			return [ia localizedStandardCompare: ib];
+		}];
+		self.pageSortDescriptor = @[ordSort];
     }
 	
     return self;
@@ -224,6 +257,8 @@
 	[pendingArchiveDeletes release];
 	[pendingFolderRotations release];
 	[pendingArchiveRotations release];
+	[pendingFolderReorders release];
+	[pendingArchiveReorders release];
     [session release];
     [super dealloc];
 }
@@ -261,6 +296,7 @@
     {
         [NSThread detachNewThreadSelector: @selector(processThumbs) toTarget: exposeView withObject: nil];
         [self clearPagedCache];
+        [self rebaseOrdinalsToCurrentOrder];
         if([self isWebtoonMode] && webtoonView)
         {
             [webtoonView setPages: [NSArray arrayWithArray: [pageController arrangedObjects]]];
@@ -1204,11 +1240,15 @@
 			[entries addObject: imagePath];
 		}
 		[pendingArchiveRotations[archivePath] removeObjectForKey: imagePath];
+		[(NSMutableArray *)pendingArchiveReorders[archivePath] removeObject: imagePath];
 	}
 	else if(imagePath && [imagePath isAbsolutePath])
 	{
 		[pendingFolderDeletes addObject: imagePath];
 		[pendingFolderRotations removeObjectForKey: imagePath];
+		NSString * folderKey = [[selectedPage valueForKeyPath: @"group.path"] copy];
+		[(NSMutableArray *)pendingFolderReorders[folderKey] removeObject: imagePath];
+		[folderKey release];
 	}
 
 	[pageController removeObject: selectedPage];
@@ -1361,6 +1401,7 @@
         [pageView correctViewPoint];
     }
 
+    [self rebaseOrdinalsToCurrentOrder];
     [self restoreProgress];
 }
 
@@ -2016,10 +2057,12 @@ images are currently visible and then skips over them.
 		for(NSArray * entries in [pendingArchiveDeletes allValues]) delTotal += [entries count];
 		NSInteger rotTotal = [pendingFolderRotations count];
 		for(NSDictionary * m in [pendingArchiveRotations allValues]) rotTotal += [m count];
+		NSInteger reordTotal = [pendingFolderReorders count] + [pendingArchiveReorders count];
 
 		NSMutableArray * parts = [NSMutableArray array];
 		if(delTotal > 0) [parts addObject: [NSString stringWithFormat: @"%ld개 페이지 제거", (long)delTotal]];
 		if(rotTotal > 0) [parts addObject: [NSString stringWithFormat: @"%ld개 페이지 회전", (long)rotTotal]];
+		if(reordTotal > 0) [parts addObject: [NSString stringWithFormat: @"%ld개 묶음 재정렬", (long)reordTotal]];
 
 		NSAlert * alert = [[[NSAlert alloc] init] autorelease];
 		[alert setMessageText: @"변경 사항을 원본에 반영할까요?"];
@@ -2041,6 +2084,7 @@ images are currently visible and then skips over them.
 		{
 			[self commitPendingDeletions];
 			[self commitPendingRotations];
+			[self commitPendingReorders];
 		}
 		else
 		{
@@ -2242,7 +2286,95 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 - (BOOL)hasPendingArchiveEdits
 {
 	return [pendingArchiveDeletes count] > 0 || [pendingFolderDeletes count] > 0
-		|| [pendingArchiveRotations count] > 0 || [pendingFolderRotations count] > 0;
+		|| [pendingArchiveRotations count] > 0 || [pendingFolderRotations count] > 0
+		|| [pendingArchiveReorders count] > 0 || [pendingFolderReorders count] > 0;
+}
+
+
+- (void)rebaseOrdinalsToCurrentOrder
+{
+	NSArray * pages = [pageController arrangedObjects];
+	NSUInteger n = [pages count];
+	for(NSUInteger i = 0; i < n; ++i)
+	{
+		SCSetOrdinalForPage(pages[i], (double)i);
+	}
+}
+
+
+/*  Called by the thumbnail expose when the user drag-reorders.  Both
+    indices are positions in the controller's current arrangedObjects.
+    Cross-group moves are rejected; the new order is materialised by
+    rebasing ordinals so the array controller resorts instantly. */
+- (void)thumbnailView:(id)view didMovePageFromIndex:(NSInteger)from toIndex:(NSInteger)to
+{
+	NSArray * pages = [pageController arrangedObjects];
+	NSInteger n = (NSInteger)[pages count];
+	if(from < 0 || from >= n || to < 0 || to >= n || from == to)
+	{
+		return;
+	}
+
+	TSSTPage * src = pages[from];
+	TSSTPage * dst = pages[to];
+	TSSTManagedGroup * group = [src valueForKey: @"group"];
+	if(group != [dst valueForKey: @"group"])
+	{
+		NSBeep();
+		return;
+	}
+
+	if([group isKindOfClass: [TSSTManagedArchive class]])
+	{
+		NSString * ap = [group valueForKey: @"path"];
+		NSString * ext = [[ap pathExtension] lowercaseString];
+		if(!([ext isEqualToString: @"zip"] || [ext isEqualToString: @"cbz"]))
+		{
+			NSAlert * a = [[[NSAlert alloc] init] autorelease];
+			[a setMessageText: @"재정렬을 지원하지 않는 형식"];
+			[a setInformativeText: @"페이지 재정렬은 CBZ/ZIP 아카이브와 폴더에서만 가능합니다."];
+			[a addButtonWithTitle: @"확인"];
+			[a runModal];
+			return;
+		}
+	}
+
+	NSMutableArray * mutable = [NSMutableArray arrayWithArray: pages];
+	TSSTPage * moving = [[mutable[from] retain] autorelease];
+	[mutable removeObjectAtIndex: from];
+	[mutable insertObject: moving atIndex: to];
+
+	for(NSUInteger i = 0; i < [mutable count]; ++i)
+	{
+		SCSetOrdinalForPage(mutable[i], (double)i);
+	}
+	[pageController rearrangeObjects];
+
+	/* Capture the within-group ordered names / paths for the commit step. */
+	NSMutableArray * groupOrder = [NSMutableArray array];
+	for(TSSTPage * p in [pageController arrangedObjects])
+	{
+		if([p valueForKey: @"group"] != group)
+		{
+			continue;
+		}
+		NSString * key = [p valueForKey: @"imagePath"];
+		if(key) [groupOrder addObject: key];
+	}
+
+	if([group isKindOfClass: [TSSTManagedArchive class]])
+	{
+		NSString * ap = [group valueForKey: @"path"];
+		if(ap) pendingArchiveReorders[ap] = groupOrder;
+	}
+	else
+	{
+		NSString * fp = [group valueForKey: @"path"];
+		if(fp) pendingFolderReorders[fp] = groupOrder;
+	}
+
+	[(TSSTThumbnailView *)exposeView setNeedsDisplay: YES];
+	[(TSSTThumbnailView *)exposeView buildTrackingRects];
 }
 
 
@@ -2323,6 +2455,159 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		[fm removeItemAtPath: tmpRoot error: NULL];
 	}
 	[pendingArchiveRotations removeAllObjects];
+	[self clearPagedCache];
+}
+
+
+- (void)commitPendingReorders
+{
+	NSFileManager * fm = [NSFileManager defaultManager];
+
+	/* Folder reorder: 2-step rename so cycles (A wants B's slot and vice
+	   versa) cannot collide. */
+	for(NSString * folderPath in [pendingFolderReorders allKeys])
+	{
+		NSArray * order = pendingFolderReorders[folderPath];
+		if(![order count]) continue;
+
+		NSMutableArray * tmpPaths = [NSMutableArray array];
+		for(NSString * orig in order)
+		{
+			NSString * ext = [[orig pathExtension] lowercaseString];
+			NSString * tmp = [folderPath stringByAppendingPathComponent:
+				[NSString stringWithFormat: @".sc-reorder-%@.%@",
+					[[NSProcessInfo processInfo] globallyUniqueString],
+					[ext length] ? ext : @"bin"]];
+			if([fm moveItemAtPath: orig toPath: tmp error: NULL])
+			{
+				[tmpPaths addObject: tmp];
+			}
+			else
+			{
+				[tmpPaths addObject: [NSNull null]];
+			}
+		}
+
+		for(NSUInteger i = 0; i < [tmpPaths count]; ++i)
+		{
+			id tmp = tmpPaths[i];
+			if(tmp == [NSNull null]) continue;
+			NSString * ext = [[tmp pathExtension] lowercaseString];
+			NSString * finalPath = [folderPath stringByAppendingPathComponent:
+				[NSString stringWithFormat: @"page%04lu.%@", (unsigned long)(i + 1),
+					[ext length] ? ext : @"bin"]];
+			if([fm fileExistsAtPath: finalPath])
+			{
+				[fm removeItemAtPath: finalPath error: NULL];
+			}
+			[fm moveItemAtPath: tmp toPath: finalPath error: NULL];
+		}
+	}
+	[pendingFolderReorders removeAllObjects];
+
+	if([pendingArchiveReorders count] == 0)
+	{
+		return;
+	}
+
+	NSMutableDictionary * pathToGroup = [NSMutableDictionary dictionary];
+	for(TSSTPage * p in [pageController arrangedObjects])
+	{
+		TSSTManagedGroup * g = [p valueForKey: @"group"];
+		if([g isKindOfClass: [TSSTManagedArchive class]])
+		{
+			NSString * gp = [g valueForKey: @"path"];
+			if(gp && !pathToGroup[gp]) pathToGroup[gp] = g;
+		}
+	}
+
+	/* Archive reorder: extract -> rename to pageNNNN.<ext> flat -> rezip
+	   -> atomically replace the original.  Original subdirectory layout
+	   and any non-image entries are dropped, which is the cost of getting
+	   a clean reading order. */
+	for(NSString * archivePath in [pendingArchiveReorders allKeys])
+	{
+		NSArray * order = pendingArchiveReorders[archivePath];
+		if(![order count] || ![fm fileExistsAtPath: archivePath]) continue;
+
+		NSString * dir = [archivePath stringByDeletingLastPathComponent];
+		NSString * uid = [[NSProcessInfo processInfo] globallyUniqueString];
+		NSString * extractDir = [dir stringByAppendingPathComponent:
+			[NSString stringWithFormat: @".sc-reorder-x-%@", uid]];
+		NSString * stagingDir = [dir stringByAppendingPathComponent:
+			[NSString stringWithFormat: @".sc-reorder-s-%@", uid]];
+		NSString * tmpZip = [dir stringByAppendingPathComponent:
+			[NSString stringWithFormat: @".sc-reorder-%@.zip", uid]];
+
+		[fm createDirectoryAtPath: extractDir withIntermediateDirectories: YES attributes: nil error: NULL];
+		[fm createDirectoryAtPath: stagingDir withIntermediateDirectories: YES attributes: nil error: NULL];
+
+		NSTask * unzip = [[[NSTask alloc] init] autorelease];
+		[unzip setLaunchPath: @"/usr/bin/unzip"];
+		[unzip setArguments: @[@"-qq", @"-o", archivePath, @"-d", extractDir]];
+		[unzip setStandardOutput: [NSPipe pipe]];
+		[unzip setStandardError: [NSPipe pipe]];
+		int ustatus = -1;
+		@try { [unzip launch]; [unzip waitUntilExit]; ustatus = [unzip terminationStatus]; }
+		@catch(NSException * e) { NSLog(@"unzip reorder %@: %@", archivePath, e); }
+
+		if(ustatus > 2)
+		{
+			NSLog(@"unzip failed (%d) for reorder of %@", ustatus, archivePath);
+			[fm removeItemAtPath: extractDir error: NULL];
+			[fm removeItemAtPath: stagingDir error: NULL];
+			continue;
+		}
+
+		for(NSUInteger i = 0; i < [order count]; ++i)
+		{
+			NSString * orig = order[i];
+			NSString * src = [extractDir stringByAppendingPathComponent: orig];
+			if(![fm fileExistsAtPath: src]) continue;
+			NSString * ext = [[orig pathExtension] lowercaseString];
+			NSString * dst = [stagingDir stringByAppendingPathComponent:
+				[NSString stringWithFormat: @"page%04lu.%@", (unsigned long)(i + 1),
+					[ext length] ? ext : @"bin"]];
+			[fm moveItemAtPath: src toPath: dst error: NULL];
+		}
+
+		NSTask * zip = [[[NSTask alloc] init] autorelease];
+		[zip setLaunchPath: @"/usr/bin/zip"];
+		[zip setCurrentDirectoryPath: stagingDir];
+		[zip setArguments: @[@"-X", @"-r", @"-q", tmpZip, @"."]];
+		[zip setStandardOutput: [NSPipe pipe]];
+		[zip setStandardError: [NSPipe pipe]];
+		int zstatus = -1;
+		@try { [zip launch]; [zip waitUntilExit]; zstatus = [zip terminationStatus]; }
+		@catch(NSException * e) { NSLog(@"zip rebuild %@: %@", archivePath, e); }
+
+		if(zstatus == 0 && [fm fileExistsAtPath: tmpZip])
+		{
+			NSURL * resulting = nil;
+			NSError * err = nil;
+			if(![fm replaceItemAtURL: [NSURL fileURLWithPath: archivePath]
+					   withItemAtURL: [NSURL fileURLWithPath: tmpZip]
+					  backupItemName: nil
+							 options: 0
+					resultingItemURL: &resulting
+							   error: &err])
+			{
+				NSLog(@"replace failed for %@: %@", archivePath, err);
+				[fm removeItemAtPath: tmpZip error: NULL];
+			}
+			TSSTManagedArchive * group = pathToGroup[archivePath];
+			if(group) [group invalidateInstance];
+		}
+		else
+		{
+			NSLog(@"zip rebuild failed (%d) for %@", zstatus, archivePath);
+			[fm removeItemAtPath: tmpZip error: NULL];
+		}
+
+		[fm removeItemAtPath: extractDir error: NULL];
+		[fm removeItemAtPath: stagingDir error: NULL];
+	}
+	[pendingArchiveReorders removeAllObjects];
 	[self clearPagedCache];
 }
 
@@ -2454,6 +2739,8 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 	[pendingArchiveDeletes removeAllObjects];
 	[pendingFolderRotations removeAllObjects];
 	[pendingArchiveRotations removeAllObjects];
+	[pendingFolderReorders removeAllObjects];
+	[pendingArchiveReorders removeAllObjects];
 	[[self managedObjectContext] rollback];
 }
 

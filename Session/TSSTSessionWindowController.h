@@ -140,6 +140,14 @@ enum PageSelectionMode {
 	   pendingArchiveRotations: archive path -> { entry name -> degrees }. */
 	NSMutableDictionary * pendingFolderRotations;
 	NSMutableDictionary * pendingArchiveRotations;
+
+	/* Per-session pending page reorders, applied on close.
+	   pendingArchiveReorders: archive path -> NSArray of entry names in
+	     the new order.  Commit renames entries to flat pageNNNN.<ext>.
+	   pendingFolderReorders:  folder path  -> NSArray of absolute file
+	     paths in the new order.  Commit renames the files in place. */
+	NSMutableDictionary * pendingFolderReorders;
+	NSMutableDictionary * pendingArchiveReorders;
 }
 
 @property (retain) NSArray * pageSortDescriptor;
@@ -203,9 +211,12 @@ enum PageSelectionMode {
 - (void)commitPendingDeletions;
 - (void)discardPendingDeletions;
 - (void)commitPendingRotations;
+- (void)commitPendingReorders;
 - (BOOL)hasPendingArchiveEdits;
 - (NSInteger)pendingRotationForPage:(TSSTPage *)page;
 - (NSImage *)rotatedImageIfNeeded:(NSImage *)image forPage:(TSSTPage *)page;
+- (void)rebaseOrdinalsToCurrentOrder;
+- (void)thumbnailView:(id)view didMovePageFromIndex:(NSInteger)from toIndex:(NSInteger)to;
 
 - (NSImage *)imageForPageAtIndex:(int)index;
 - (NSString *)nameForPageAtIndex:(int)index;

@@ -35,6 +35,9 @@
         trackingIndexes = [NSMutableSet new];
         threadIdent = 0;
         thumbLock = [NSLock new];
+        dragStartIndex = -1;
+        dropTargetIndex = -1;
+        dragInProgress = NO;
     }
     return self;
 }
@@ -145,23 +148,114 @@
         thumbnail = [dataSource imageForPageAtIndex: counter];
         drawRect = [self rectForIndex: counter];
         drawRect = rectWithSizeCenteredInRect([thumbnail size], NSInsetRect(drawRect, 2, 2));
-        [thumbnail drawInRect: drawRect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0];
-		if(NSMouseInRect(mousePoint, drawRect, NO))
+        CGFloat alpha = (dragInProgress && counter == dragStartIndex) ? 0.35f : 1.0f;
+        [thumbnail drawInRect: drawRect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: alpha];
+		if(!dragInProgress && NSMouseInRect(mousePoint, drawRect, NO))
 		{
 			hoverIndex = counter;
             [self zoomThumbnailAtIndex: hoverIndex];
 		}
         ++counter;
     }
+
+    if(dragInProgress && dropTargetIndex >= 0 && dropTargetIndex < limit)
+    {
+        NSRect target = NSInsetRect([self rectForIndex: dropTargetIndex], 2, 2);
+        [[[NSColor controlAccentColor] colorWithAlphaComponent: 0.9] set];
+        NSBezierPath * p = [NSBezierPath bezierPathWithRect: target];
+        [p setLineWidth: 3.0];
+        [p stroke];
+    }
+
+    if(dragInProgress && dragStartIndex >= 0 && dragStartIndex < limit)
+    {
+        NSImage * ghost = [dataSource imageForPageAtIndex: dragStartIndex];
+        if(ghost)
+        {
+            NSSize s = [ghost size];
+            CGFloat maxDim = 120.0;
+            CGFloat scale = MIN(1.0, maxDim / MAX(s.width, s.height));
+            NSSize gs = NSMakeSize(s.width * scale, s.height * scale);
+            NSRect gr = NSMakeRect(dragCurrentPoint.x - gs.width / 2,
+                                   dragCurrentPoint.y - gs.height / 2,
+                                   gs.width, gs.height);
+            [ghost drawInRect: gr fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 0.85];
+        }
+    }
 }
 
 
 
+- (NSInteger)indexForPoint:(NSPoint)p
+{
+    NSInteger n = [[pageController content] count];
+    for(NSInteger i = 0; i < n; ++i)
+    {
+        if(NSPointInRect(p, [self rectForIndex: i]))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+
 - (void)mouseDown:(NSEvent *)event
 {
-    if(hoverIndex < [[pageController content] count] && hoverIndex >= 0)
+    dragStartIndex = (hoverIndex < [[pageController content] count] && hoverIndex >= 0) ? hoverIndex : -1;
+    dropTargetIndex = -1;
+    dragInProgress = NO;
+    dragStartPoint = [self convertPoint: [event locationInWindow] fromView: nil];
+    dragCurrentPoint = dragStartPoint;
+}
+
+
+- (void)mouseDragged:(NSEvent *)event
+{
+    if(dragStartIndex < 0)
     {
-        [pageController setSelectionIndex: hoverIndex];
+        return;
+    }
+    dragCurrentPoint = [self convertPoint: [event locationInWindow] fromView: nil];
+    if(!dragInProgress)
+    {
+        CGFloat dx = dragCurrentPoint.x - dragStartPoint.x;
+        CGFloat dy = dragCurrentPoint.y - dragStartPoint.y;
+        if((dx * dx + dy * dy) < 25.0)        /* 5 pt threshold */
+        {
+            return;
+        }
+        dragInProgress = YES;
+        [thumbnailView setImage: nil];       /* hide hover zoom floater while dragging */
+    }
+    dropTargetIndex = [self indexForPoint: dragCurrentPoint];
+    [self setNeedsDisplay: YES];
+}
+
+
+- (void)mouseUp:(NSEvent *)event
+{
+    BOOL wasDrag = dragInProgress;
+    NSInteger from = dragStartIndex;
+    NSInteger to = dropTargetIndex;
+    dragStartIndex = -1;
+    dropTargetIndex = -1;
+    dragInProgress = NO;
+
+    if(wasDrag)
+    {
+        if(from >= 0 && to >= 0 && from != to
+           && [dataSource respondsToSelector: @selector(thumbnailView:didMovePageFromIndex:toIndex:)])
+        {
+            [dataSource thumbnailView: self didMovePageFromIndex: from toIndex: to];
+        }
+        [self setNeedsDisplay: YES];
+        return;
+    }
+
+    if(from >= 0)
+    {
+        [pageController setSelectionIndex: from];
     }
     [[self window] orderOut: self];
 }
@@ -221,7 +315,8 @@
 
 - (void)mouseEntered:(NSEvent *)theEvent
 {
-	hoverIndex = [(NSNumber *)[theEvent userData] integerValue];	
+	if(dragInProgress) return;
+	hoverIndex = [(NSNumber *)[theEvent userData] integerValue];
     if(limit == [[pageController content] count])
     {
         [NSTimer scheduledTimerWithTimeInterval: 0.05 target: self selector: @selector(dwell:) userInfo: @(hoverIndex) repeats: NO];

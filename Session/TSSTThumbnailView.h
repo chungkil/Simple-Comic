@@ -27,6 +27,13 @@
     
     NSLock * thumbLock;
     unsigned threadIdent;
+
+    /* Drag-to-reorder state. */
+    NSInteger dragStartIndex;
+    NSInteger dropTargetIndex;
+    BOOL dragInProgress;
+    NSPoint dragStartPoint;
+    NSPoint dragCurrentPoint;
 }
 
 
