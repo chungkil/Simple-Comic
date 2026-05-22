@@ -365,6 +365,17 @@ static void SCSetOrdinalForPage(id page, double v)
 }
 
 
+- (NSImage *)thumbnailForPageIndex:(NSInteger)index
+{
+    NSArray * pages = [pageController arrangedObjects];
+    if(index < 0 || index >= (NSInteger)[pages count])
+    {
+        return nil;
+    }
+    return [pages[index] valueForKey: @"thumbnail"];
+}
+
+
 
 - (NSString *)nameForPageAtIndex:(int)index
 {

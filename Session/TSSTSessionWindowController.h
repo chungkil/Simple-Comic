@@ -228,6 +228,7 @@ enum PageSelectionMode {
 - (void)thumbnailView:(id)view didMovePageFromIndex:(NSInteger)from toIndex:(NSInteger)to;
 
 - (NSImage *)imageForPageAtIndex:(int)index;
+- (NSImage *)thumbnailForPageIndex:(NSInteger)index;
 - (NSString *)nameForPageAtIndex:(int)index;
 
 - (void)restoreSession;

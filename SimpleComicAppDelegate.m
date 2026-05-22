@@ -368,6 +368,23 @@ static NSArray * allAvailableStringEncodings(void)
 												 keyEquivalent: @""] autorelease];
 		[item setTarget: self];
 		[item setRepresentedObject: @(page)];
+
+		NSImage * thumb = [controller thumbnailForPageIndex: page];
+		if(thumb)
+		{
+			NSSize ts = [thumb size];
+			CGFloat h = 28.0;
+			CGFloat w = ts.height > 0 ? ts.width * h / ts.height : h;
+			NSImage * small = [[[NSImage alloc] initWithSize: NSMakeSize(w, h)] autorelease];
+			[small lockFocus];
+			[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
+			[thumb drawInRect: NSMakeRect(0, 0, w, h)
+					 fromRect: NSZeroRect
+					operation: NSCompositingOperationSourceOver
+					 fraction: 1.0];
+			[small unlockFocus];
+			[item setImage: small];
+		}
 		[menu addItem: item];
 
 		NSMenuItem * editItem = [[[NSMenuItem alloc] initWithTitle: title
