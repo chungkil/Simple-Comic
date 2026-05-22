@@ -12,8 +12,13 @@
 @interface SCLibraryWindowController : NSWindowController <NSCollectionViewDataSource, NSCollectionViewDelegate>
 {
     NSCollectionView * collectionView;
-    NSArray * workKeys;
+    NSArray * workKeys;          /* filtered + sorted, displayed */
+    NSArray * allKeys;           /* merged opened + scanned, unfiltered */
     NSTextField * folderLabel;
+    NSSearchField * searchField;
+    NSPopUpButton * sortPopup;
+    NSSlider * sizeSlider;
+    NSInteger sortMode;
 }
 
 - (void)reload;

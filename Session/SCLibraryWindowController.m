@@ -12,12 +12,23 @@
 #import "TSSTPage.h"
 
 static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
+static NSString * const SCLibrarySortKey = @"SCLibrarySortMode";
+static NSString * const SCLibraryCoverWidthKey = @"SCLibraryCoverWidth";
+
+enum { SCSortRecentRead = 0, SCSortRecentAdded, SCSortName, SCSortProgress };
+
+static const CGFloat SCMinCoverWidth = 110.0;
+static const CGFloat SCMaxCoverWidth = 240.0;
 
 
 #pragma mark - Collection item
 
 
 @interface SCLibraryItem : NSCollectionViewItem
+{
+    NSView * unreadBadge;
+}
+- (void)setUnread:(BOOL)unread;
 @end
 
 @implementation SCLibraryItem
@@ -33,6 +44,14 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
     [iv setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
     [v addSubview: iv];
     self.imageView = iv;
+
+    unreadBadge = [[[NSView alloc] initWithFrame: NSMakeRect(148, 224, 12, 12)] autorelease];
+    [unreadBadge setWantsLayer: YES];
+    unreadBadge.layer.cornerRadius = 6.0;
+    unreadBadge.layer.backgroundColor = [[NSColor systemBlueColor] CGColor];
+    [unreadBadge setAutoresizingMask: NSViewMinXMargin | NSViewMinYMargin];
+    [unreadBadge setHidden: YES];
+    [v addSubview: unreadBadge];
 
     NSTextField * tf = [[[NSTextField alloc] initWithFrame: NSMakeRect(6, 4, 158, 32)] autorelease];
     [tf setEditable: NO];
@@ -66,6 +85,11 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
     self.view.layer.backgroundColor = selected
         ? [[highlight colorWithAlphaComponent: 0.30] CGColor]
         : NULL;
+}
+
+- (void)setUnread:(BOOL)unread
+{
+    [unreadBadge setHidden: !unread];
 }
 
 @end
@@ -122,8 +146,15 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
         [scrollView setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
         [scrollView setBorderType: NSNoBorder];
 
+        NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
+        sortMode = [defaults integerForKey: SCLibrarySortKey];
+        CGFloat coverW = [defaults objectForKey: SCLibraryCoverWidthKey]
+            ? [defaults doubleForKey: SCLibraryCoverWidthKey] : 150.0;
+        if(coverW < SCMinCoverWidth) coverW = SCMinCoverWidth;
+        if(coverW > SCMaxCoverWidth) coverW = SCMaxCoverWidth;
+
         NSCollectionViewFlowLayout * layout = [[[NSCollectionViewFlowLayout alloc] init] autorelease];
-        [layout setItemSize: NSMakeSize(170, 250)];
+        [layout setItemSize: NSMakeSize(coverW + 20, coverW * 1.4 + 36)];
         [layout setMinimumInteritemSpacing: 8];
         [layout setMinimumLineSpacing: 12];
         [layout setSectionInset: NSEdgeInsetsMake(14, 14, 14, 14)];
@@ -156,14 +187,16 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
 
         [scrollView setDocumentView: collectionView];
 
-        /* Header bar: choose-folder button + current folder label. */
+        /* Two-row header: row 1 = choose folder + path; row 2 = sort,
+           search, cover-size slider. */
         NSView * content = [[[NSView alloc] initWithFrame: [[window contentView] bounds]] autorelease];
         [content setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
-        CGFloat barH = 40.0;
+        CGFloat barH = 72.0;
         NSRect cb = [content bounds];
+        CGFloat row1 = NSMaxY(cb) - 32;
+        CGFloat row2 = NSMaxY(cb) - 64;
 
-        NSButton * chooseButton = [[[NSButton alloc] initWithFrame:
-            NSMakeRect(10, NSMaxY(cb) - barH + 6, 150, 28)] autorelease];
+        NSButton * chooseButton = [[[NSButton alloc] initWithFrame: NSMakeRect(10, row1, 150, 26)] autorelease];
         [chooseButton setTitle: NSLocalizedString(@"Choose Folder…", @"")];
         [chooseButton setBezelStyle: NSBezelStyleRounded];
         [chooseButton setTarget: self];
@@ -171,8 +204,7 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
         [chooseButton setAutoresizingMask: NSViewMinYMargin];
         [content addSubview: chooseButton];
 
-        folderLabel = [[NSTextField alloc] initWithFrame:
-            NSMakeRect(170, NSMaxY(cb) - barH + 9, NSWidth(cb) - 180, 22)];
+        folderLabel = [[NSTextField alloc] initWithFrame: NSMakeRect(170, row1 + 3, NSWidth(cb) - 180, 20)];
         [folderLabel setEditable: NO];
         [folderLabel setBordered: NO];
         [folderLabel setDrawsBackground: NO];
@@ -181,6 +213,33 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
         [folderLabel setLineBreakMode: NSLineBreakByTruncatingMiddle];
         [folderLabel setAutoresizingMask: NSViewWidthSizable | NSViewMinYMargin];
         [content addSubview: folderLabel];
+
+        sortPopup = [[[NSPopUpButton alloc] initWithFrame: NSMakeRect(10, row2, 150, 26)] autorelease];
+        [sortPopup addItemsWithTitles: @[NSLocalizedString(@"Recently read", @""),
+                                         NSLocalizedString(@"Recently added", @""),
+                                         NSLocalizedString(@"Name", @""),
+                                         NSLocalizedString(@"Progress", @"")]];
+        [sortPopup selectItemAtIndex: sortMode];
+        [sortPopup setTarget: self];
+        [sortPopup setAction: @selector(sortChanged:)];
+        [sortPopup setAutoresizingMask: NSViewMinYMargin];
+        [content addSubview: sortPopup];
+
+        sizeSlider = [[[NSSlider alloc] initWithFrame: NSMakeRect(NSWidth(cb) - 130, row2, 120, 26)] autorelease];
+        [sizeSlider setMinValue: SCMinCoverWidth];
+        [sizeSlider setMaxValue: SCMaxCoverWidth];
+        [sizeSlider setDoubleValue: coverW];
+        [sizeSlider setTarget: self];
+        [sizeSlider setAction: @selector(coverSizeChanged:)];
+        [sizeSlider setAutoresizingMask: NSViewMinXMargin | NSViewMinYMargin];
+        [content addSubview: sizeSlider];
+
+        searchField = [[[NSSearchField alloc] initWithFrame: NSMakeRect(170, row2, NSWidth(cb) - 170 - 140, 24)] autorelease];
+        [[searchField cell] setPlaceholderString: NSLocalizedString(@"Search", @"")];
+        [searchField setTarget: self];
+        [searchField setAction: @selector(searchChanged:)];
+        [searchField setAutoresizingMask: NSViewWidthSizable | NSViewMinYMargin];
+        [content addSubview: searchField];
 
         [scrollView setFrame: NSMakeRect(0, 0, NSWidth(cb), NSHeight(cb) - barH)];
         [content addSubview: scrollView];
@@ -202,6 +261,7 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
     [collectionView release];
     [folderLabel release];
     [workKeys release];
+    [allKeys release];
     [super dealloc];
 }
 
@@ -323,9 +383,89 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
         [folderLabel setStringValue: NSLocalizedString(@"No library folder chosen", @"")];
     }
 
+    [allKeys release];
+    allKeys = [keys copy];
+    [self applyFilterAndSort];
+}
+
+
+- (void)applyFilterAndSort
+{
+    NSString * q = [[searchField stringValue] lowercaseString];
+    NSMutableArray * filtered = [NSMutableArray array];
+    for(NSString * k in allKeys)
+    {
+        if([q length] == 0
+           || [[[k lastPathComponent] lowercaseString] rangeOfString: q].location != NSNotFound)
+        {
+            [filtered addObject: k];
+        }
+    }
+
+    SCProgressStore * store = [SCProgressStore sharedStore];
+    NSFileManager * fm = [NSFileManager defaultManager];
+    NSInteger mode = sortMode;
+    [filtered sortUsingComparator: ^NSComparisonResult(NSString * a, NSString * b) {
+        switch(mode)
+        {
+            case SCSortName:
+                return [[a lastPathComponent] localizedStandardCompare: [b lastPathComponent]];
+            case SCSortRecentAdded:
+            {
+                NSDate * da = [[fm attributesOfItemAtPath: a error: NULL] fileModificationDate];
+                NSDate * db = [[fm attributesOfItemAtPath: b error: NULL] fileModificationDate];
+                if(!da && !db) return NSOrderedSame;
+                if(!da) return NSOrderedDescending;
+                if(!db) return NSOrderedAscending;
+                return [db compare: da];
+            }
+            case SCSortProgress:
+            {
+                NSInteger pa = [[[store recordForKey: a] objectForKey: @"lastPage"] integerValue];
+                NSInteger pb = [[[store recordForKey: b] objectForKey: @"lastPage"] integerValue];
+                if(pa == pb) return [[a lastPathComponent] localizedStandardCompare: [b lastPathComponent]];
+                return pa > pb ? NSOrderedAscending : NSOrderedDescending;
+            }
+            case SCSortRecentRead:
+            default:
+            {
+                NSDate * da = [[store recordForKey: a] objectForKey: @"updated"];
+                NSDate * db = [[store recordForKey: b] objectForKey: @"updated"];
+                if(!da && !db) return [[a lastPathComponent] localizedStandardCompare: [b lastPathComponent]];
+                if(!da) return NSOrderedDescending;
+                if(!db) return NSOrderedAscending;
+                return [db compare: da];
+            }
+        }
+    }];
+
     [workKeys release];
-    workKeys = [keys copy];
+    workKeys = [filtered copy];
     [collectionView reloadData];
+}
+
+
+- (void)searchChanged:(id)sender
+{
+    [self applyFilterAndSort];
+}
+
+
+- (void)sortChanged:(id)sender
+{
+    sortMode = [sortPopup indexOfSelectedItem];
+    [[NSUserDefaults standardUserDefaults] setInteger: sortMode forKey: SCLibrarySortKey];
+    [self applyFilterAndSort];
+}
+
+
+- (void)coverSizeChanged:(id)sender
+{
+    CGFloat w = [sizeSlider doubleValue];
+    [[NSUserDefaults standardUserDefaults] setDouble: w forKey: SCLibraryCoverWidthKey];
+    NSCollectionViewFlowLayout * layout = (NSCollectionViewFlowLayout *)[collectionView collectionViewLayout];
+    [layout setItemSize: NSMakeSize(w + 20, w * 1.4 + 36)];
+    [layout invalidateLayout];
 }
 
 
@@ -446,6 +586,7 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
 
     NSString * title = [[key lastPathComponent] stringByDeletingPathExtension];
     NSDictionary * record = [[SCProgressStore sharedStore] recordForKey: key];
+    [item setUnread: (record == nil)];
     if(record)
     {
         NSInteger lastPage = [[record objectForKey: @"lastPage"] integerValue];
