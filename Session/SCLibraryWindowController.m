@@ -142,10 +142,9 @@ static const CGFloat SCMaxCoverWidth = 240.0;
     self = [super initWithWindow: window];
     if(self)
     {
-        NSScrollView * scrollView = [[[NSScrollView alloc] initWithFrame: [[window contentView] bounds]] autorelease];
-        [scrollView setHasVerticalScroller: YES];
-        [scrollView setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
-        [scrollView setBorderType: NSNoBorder];
+        gridScroll = [[NSScrollView alloc] initWithFrame: [[window contentView] bounds]];
+        [gridScroll setHasVerticalScroller: YES];
+        [gridScroll setBorderType: NSNoBorder];
 
         NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
         sortMode = [defaults integerForKey: SCLibrarySortKey];
@@ -160,7 +159,7 @@ static const CGFloat SCMaxCoverWidth = 240.0;
         [layout setMinimumLineSpacing: 12];
         [layout setSectionInset: NSEdgeInsetsMake(14, 14, 14, 14)];
 
-        collectionView = [[SCLibraryCollectionView alloc] initWithFrame: [scrollView bounds]];
+        collectionView = [[SCLibraryCollectionView alloc] initWithFrame: [gridScroll bounds]];
         [collectionView setCollectionViewLayout: layout];
         [collectionView setDataSource: self];
         [collectionView setDelegate: self];
@@ -186,7 +185,32 @@ static const CGFloat SCMaxCoverWidth = 240.0;
                          keyEquivalent: @""] setTarget: self];
         [collectionView setMenu: contextMenu];
 
-        [scrollView setDocumentView: collectionView];
+        [gridScroll setDocumentView: collectionView];
+
+        /* Continue-reading shelf: horizontal strip of recent works. */
+        continueScroll = [[NSScrollView alloc] initWithFrame: NSZeroRect];
+        [continueScroll setHasHorizontalScroller: YES];
+        [continueScroll setHasVerticalScroller: NO];
+        [continueScroll setBorderType: NSNoBorder];
+
+        NSCollectionViewFlowLayout * cl = [[[NSCollectionViewFlowLayout alloc] init] autorelease];
+        [cl setScrollDirection: NSCollectionViewScrollDirectionHorizontal];
+        [cl setItemSize: NSMakeSize(130, 180)];
+        [cl setMinimumInteritemSpacing: 8];
+        [cl setMinimumLineSpacing: 8];
+        [cl setSectionInset: NSEdgeInsetsMake(8, 12, 8, 12)];
+
+        continueView = [[NSCollectionView alloc] initWithFrame: NSZeroRect];
+        [continueView setCollectionViewLayout: cl];
+        [continueView setDataSource: self];
+        [continueView setSelectable: YES];
+        [continueView setBackgroundColors: @[[NSColor controlBackgroundColor]]];
+        [continueView registerClass: [SCLibraryItem class] forItemWithIdentifier: @"item"];
+        NSClickGestureRecognizer * single = [[[NSClickGestureRecognizer alloc]
+            initWithTarget: self action: @selector(handleContinueClick:)] autorelease];
+        [single setNumberOfClicksRequired: 1];
+        [continueView addGestureRecognizer: single];
+        [continueScroll setDocumentView: continueView];
 
         /* Two-row header: row 1 = choose folder + path; row 2 = sort,
            search, cover-size slider. */
@@ -250,10 +274,19 @@ static const CGFloat SCMaxCoverWidth = 240.0;
         [searchField setAutoresizingMask: NSViewWidthSizable | NSViewMinYMargin];
         [content addSubview: searchField];
 
-        [scrollView setFrame: NSMakeRect(0, 0, NSWidth(cb), NSHeight(cb) - barH)];
-        [content addSubview: scrollView];
+        continueLabel = [[NSTextField alloc] initWithFrame: NSZeroRect];
+        [continueLabel setEditable: NO];
+        [continueLabel setBordered: NO];
+        [continueLabel setDrawsBackground: NO];
+        [continueLabel setFont: [NSFont boldSystemFontOfSize: 11]];
+        [continueLabel setTextColor: [NSColor secondaryLabelColor]];
+        [continueLabel setStringValue: NSLocalizedString(@"Continue Reading", @"")];
+        [content addSubview: continueLabel];
 
+        [content addSubview: continueScroll];
+        [content addSubview: gridScroll];
         [window setContentView: content];
+        [window setDelegate: self];
 
         [[NSNotificationCenter defaultCenter] addObserver: self
                                                  selector: @selector(coverReady:)
@@ -268,6 +301,11 @@ static const CGFloat SCMaxCoverWidth = 240.0;
 {
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     [collectionView release];
+    [continueView release];
+    [continueScroll release];
+    [gridScroll release];
+    [continueLabel release];
+    [continueKeys release];
     [folderLabel release];
     [workKeys release];
     [allKeys release];
@@ -454,7 +492,66 @@ static const CGFloat SCMaxCoverWidth = 240.0;
 
     [allKeys release];
     allKeys = [keys copy];
+
+    /* Continue-reading: most-recently-read existing works (max 8). */
+    NSFileManager * fm = [NSFileManager defaultManager];
+    NSMutableArray * recent = [NSMutableArray array];
+    for(NSString * k in [[SCProgressStore sharedStore] allWorkKeys])
+    {
+        if([k length] && [fm fileExistsAtPath: k])
+        {
+            [recent addObject: k];
+            if([recent count] >= 8) break;
+        }
+    }
+    [continueKeys release];
+    continueKeys = [recent copy];
+    [continueView reloadData];
+    [self layoutRegions];
+
     [self applyFilterAndSort];
+}
+
+
+- (void)layoutRegions
+{
+    NSView * content = [[self window] contentView];
+    NSRect cb = [content bounds];
+    CGFloat headerH = 72.0;
+    CGFloat labelH = 18.0;
+    CGFloat stripH = [continueKeys count] ? 196.0 : 0.0;
+    BOOL show = stripH > 0.0;
+    CGFloat afterHeader = NSHeight(cb) - headerH;
+
+    [continueLabel setHidden: !show];
+    [continueScroll setHidden: !show];
+    if(show)
+    {
+        [continueLabel setFrame: NSMakeRect(12, afterHeader - labelH, NSWidth(cb) - 24, labelH)];
+        [continueScroll setFrame: NSMakeRect(0, afterHeader - stripH, NSWidth(cb), stripH - labelH)];
+    }
+    [gridScroll setFrame: NSMakeRect(0, 0, NSWidth(cb), afterHeader - stripH)];
+}
+
+
+- (void)windowDidResize:(NSNotification *)note
+{
+    [self layoutRegions];
+}
+
+
+- (void)handleContinueClick:(NSGestureRecognizer *)gesture
+{
+    NSPoint p = [gesture locationInView: continueView];
+    NSIndexPath * ip = [continueView indexPathForItemAtPoint: p];
+    if(ip && [ip item] >= 0 && [ip item] < (NSInteger)[continueKeys count])
+    {
+        NSString * key = [continueKeys objectAtIndex: [ip item]];
+        if([key length])
+        {
+            [(SimpleComicAppDelegate *)[NSApp delegate] openWorkAtPath: key];
+        }
+    }
 }
 
 
@@ -552,8 +649,14 @@ static const CGFloat SCMaxCoverWidth = 240.0;
     NSUInteger idx = [workKeys indexOfObject: key];
     if(idx != NSNotFound)
     {
-        NSIndexPath * ip = [NSIndexPath indexPathForItem: idx inSection: 0];
-        [collectionView reloadItemsAtIndexPaths: [NSSet setWithObject: ip]];
+        [collectionView reloadItemsAtIndexPaths:
+            [NSSet setWithObject: [NSIndexPath indexPathForItem: idx inSection: 0]]];
+    }
+    NSUInteger cidx = [continueKeys indexOfObject: key];
+    if(cidx != NSNotFound)
+    {
+        [continueView reloadItemsAtIndexPaths:
+            [NSSet setWithObject: [NSIndexPath indexPathForItem: cidx inSection: 0]]];
     }
 }
 
@@ -631,7 +734,7 @@ static const CGFloat SCMaxCoverWidth = 240.0;
 
 - (NSInteger)collectionView:(NSCollectionView *)cv numberOfItemsInSection:(NSInteger)section
 {
-    return [workKeys count];
+    return (cv == continueView) ? [continueKeys count] : [workKeys count];
 }
 
 
@@ -639,7 +742,9 @@ static const CGFloat SCMaxCoverWidth = 240.0;
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
     SCLibraryItem * item = (SCLibraryItem *)[cv makeItemWithIdentifier: @"item" forIndexPath: indexPath];
-    NSString * key = [self keyForIndexPath: indexPath];
+    NSArray * source = (cv == continueView) ? continueKeys : workKeys;
+    NSString * key = ([indexPath item] >= 0 && [indexPath item] < (NSInteger)[source count])
+        ? [source objectAtIndex: [indexPath item]] : nil;
     item.representedObject = key;
 
     BOOL missing = [key length] && ![[NSFileManager defaultManager] fileExistsAtPath: key];

@@ -9,7 +9,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-@interface SCLibraryWindowController : NSWindowController <NSCollectionViewDataSource, NSCollectionViewDelegate>
+@interface SCLibraryWindowController : NSWindowController <NSCollectionViewDataSource, NSCollectionViewDelegate, NSWindowDelegate>
 {
     NSCollectionView * collectionView;
     NSArray * workKeys;          /* filtered + sorted, displayed */
@@ -19,6 +19,13 @@
     NSPopUpButton * sortPopup;
     NSSlider * sizeSlider;
     NSInteger sortMode;
+
+    /* Continue-reading shelf: a horizontal strip of recently read works. */
+    NSCollectionView * continueView;
+    NSScrollView * continueScroll;
+    NSScrollView * gridScroll;
+    NSArray * continueKeys;
+    NSTextField * continueLabel;
 }
 
 - (void)reload;
