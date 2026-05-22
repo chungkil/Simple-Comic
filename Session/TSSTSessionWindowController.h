@@ -83,6 +83,9 @@ enum PageSelectionMode {
 	   not persisted from the initial (pre-restore) state. */
 	BOOL progressRestored;
 
+	/* Guards re-entry while a CBR/7z -> CBZ conversion runs. */
+	BOOL convertingToCBZ;
+
 	/* Decoded full-page images for the paged reading path, kept warm a
 	   few pages ahead/behind so page turns do not block on a decode. */
 	NSCache * pagedImageCache;
@@ -198,6 +201,9 @@ enum PageSelectionMode {
 - (IBAction)removePages:(id)sender;
 - (IBAction)rotateSavePageRight:(id)sender;
 - (IBAction)rotateSavePageLeft:(id)sender;
+/* Converts a non-zip archive (CBR/7z/…) to a sibling CBZ so it can be edited */
+- (IBAction)convertToCBZ:(id)sender;
+- (NSString *)convertArchiveToCBZ:(NSString *)archivePath error:(NSString **)errMsg;
 - (IBAction)setArchiveIcon:(id)sender;
 - (IBAction)extractPage:(id)sender;
 

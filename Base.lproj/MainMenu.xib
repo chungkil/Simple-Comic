@@ -125,6 +125,12 @@ CA
                                     <action selector="rotateSavePageLeft:" target="-1" id="scRot0004"/>
                                 </connections>
                             </menuItem>
+                            <menuItem isSeparatorItem="YES" id="scCvt0000"/>
+                            <menuItem title="Convert to CBZ…" keyEquivalent="" id="scCvt0001">
+                                <connections>
+                                    <action selector="convertToCBZ:" target="-1" id="scCvt0002"/>
+                                </connections>
+                            </menuItem>
                         </items>
                     </menu>
                 </menuItem>

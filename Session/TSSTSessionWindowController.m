@@ -1990,6 +1990,13 @@ images are currently visible and then skips over them.
 		valid = ![[session valueForKey: TSSTViewRotation] intValue]
 			&& [[pageController arrangedObjects] count] > 0;
 	}
+	else if ([menuItem action] == @selector(convertToCBZ:))
+	{
+		NSString * ext = [[[self workIdentifier] pathExtension] lowercaseString];
+		valid = !convertingToCBZ
+			&& [[TSSTManagedArchive archiveExtensions] containsObject: ext]
+			&& ![ext isEqualToString: @"zip"] && ![ext isEqualToString: @"cbz"];
+	}
     else if([menuItem tag] == 400)
     {
         state = [[session valueForKey: TSSTPageScaleOptions] intValue] == 0 ? NSOnState : NSOffState;
@@ -2268,6 +2275,107 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 	{
 		[webtoonView relayoutPreservingAnchor];
 	}
+}
+
+
+- (IBAction)convertToCBZ:(id)sender
+{
+	NSString * path = [self workIdentifier];
+	NSString * ext = [[path pathExtension] lowercaseString];
+	if([path length] == 0
+	   || ![[TSSTManagedArchive archiveExtensions] containsObject: ext]
+	   || [ext isEqualToString: @"zip"] || [ext isEqualToString: @"cbz"]
+	   || ![[NSFileManager defaultManager] fileExistsAtPath: path]
+	   || convertingToCBZ)
+	{
+		NSBeep();
+		return;
+	}
+	convertingToCBZ = YES;
+
+	NSString * pathCopy = [[path copy] autorelease];
+	dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+		NSString * result = nil;
+		NSString * errMsg = nil;
+		@autoreleasepool
+		{
+			result = [[self convertArchiveToCBZ: pathCopy error: &errMsg] retain];
+			[errMsg retain];
+		}
+		dispatch_async(dispatch_get_main_queue(), ^{
+			convertingToCBZ = NO;
+			if(result)
+			{
+				[(SimpleComicAppDelegate *)[NSApp delegate] openWorkAtPath: result];
+			}
+			else
+			{
+				NSAlert * a = [[[NSAlert alloc] init] autorelease];
+				[a setMessageText: @"CBZ 변환 실패"];
+				[a setInformativeText: errMsg ? errMsg : @"아카이브를 추출하지 못했습니다."];
+				[a addButtonWithTitle: @"확인"];
+				[a runModal];
+			}
+			[result release];
+			[errMsg release];
+		});
+	});
+}
+
+
+/*  Extracts a non-zip archive into a temp folder and repackages it as a
+    sibling .cbz (original kept).  Returns the new path, or nil + errMsg.
+    Runs off the main thread. */
+- (NSString *)convertArchiveToCBZ:(NSString *)archivePath error:(NSString **)errMsg
+{
+	NSFileManager * fm = [NSFileManager defaultManager];
+	NSString * dir = [archivePath stringByDeletingLastPathComponent];
+	NSString * base = [[archivePath lastPathComponent] stringByDeletingPathExtension];
+	NSString * uid = [[NSProcessInfo processInfo] globallyUniqueString];
+	NSString * staging = [dir stringByAppendingPathComponent:
+		[NSString stringWithFormat: @".sc-convert-%@", uid]];
+	[fm createDirectoryAtPath: staging withIntermediateDirectories: YES attributes: nil error: NULL];
+
+	XADArchive * ar = [[[XADArchive alloc] initWithFile: archivePath delegate: nil error: NULL] autorelease];
+	if(!ar || ![ar extractTo: staging])
+	{
+		[fm removeItemAtPath: staging error: NULL];
+		if(errMsg) *errMsg = @"아카이브 추출 실패 (지원되지 않거나 암호 보호된 형식).";
+		return nil;
+	}
+
+	NSString * target = [dir stringByAppendingPathComponent: [base stringByAppendingPathExtension: @"cbz"]];
+	NSInteger dedupe = 1;
+	while([fm fileExistsAtPath: target])
+	{
+		target = [dir stringByAppendingPathComponent:
+			[NSString stringWithFormat: @"%@ (%ld).cbz", base, (long)(++dedupe)]];
+	}
+	NSString * tmpZip = [dir stringByAppendingPathComponent:
+		[NSString stringWithFormat: @".sc-convert-%@.zip", uid]];
+
+	NSTask * zip = [[[NSTask alloc] init] autorelease];
+	[zip setLaunchPath: @"/usr/bin/zip"];
+	[zip setCurrentDirectoryPath: staging];
+	[zip setArguments: @[@"-X", @"-r", @"-q", tmpZip, @"."]];
+	[zip setStandardOutput: [NSPipe pipe]];
+	[zip setStandardError: [NSPipe pipe]];
+	int status = -1;
+	@try { [zip launch]; [zip waitUntilExit]; status = [zip terminationStatus]; }
+	@catch(NSException * e) { NSLog(@"convert zip %@: %@", archivePath, e); }
+
+	NSString * result = nil;
+	if(status == 0 && [fm fileExistsAtPath: tmpZip] && [fm moveItemAtPath: tmpZip toPath: target error: NULL])
+	{
+		result = target;
+	}
+	else
+	{
+		[fm removeItemAtPath: tmpZip error: NULL];
+		if(errMsg) *errMsg = @"CBZ 생성 실패.";
+	}
+	[fm removeItemAtPath: staging error: NULL];
+	return result;
 }
 
 
