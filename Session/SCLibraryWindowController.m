@@ -433,12 +433,16 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
     NSString * key = [self keyForIndexPath: indexPath];
     item.representedObject = key;
 
+    BOOL missing = [key length] && ![[NSFileManager defaultManager] fileExistsAtPath: key];
+
     NSImage * art = [[SCCoverCache sharedCache] coverForKey: key path: key];
     if(!art)
     {
         art = [[NSWorkspace sharedWorkspace] iconForFile: key];
     }
     [item.imageView setImage: art];
+    /* Reset every time — collection items are reused. */
+    [item.imageView setAlphaValue: missing ? 0.4 : 1.0];
 
     NSString * title = [[key lastPathComponent] stringByDeletingPathExtension];
     NSDictionary * record = [[SCProgressStore sharedStore] recordForKey: key];
@@ -447,7 +451,13 @@ static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
         NSInteger lastPage = [[record objectForKey: @"lastPage"] integerValue];
         title = [NSString stringWithFormat: @"%@\np.%ld", title, (long)(lastPage + 1)];
     }
+    if(missing)
+    {
+        title = [NSString stringWithFormat: NSLocalizedString(@"%@\n(파일 없음)", @"Missing file label"),
+                 [[key lastPathComponent] stringByDeletingPathExtension]];
+    }
     [item.textField setStringValue: title];
+    [item.textField setTextColor: missing ? [NSColor tertiaryLabelColor] : [NSColor labelColor]];
 
     return item;
 }
