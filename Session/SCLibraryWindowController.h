@@ -9,9 +9,9 @@
 
 #import <Cocoa/Cocoa.h>
 
-@interface SCLibraryWindowController : NSWindowController <NSTableViewDataSource, NSTableViewDelegate>
+@interface SCLibraryWindowController : NSWindowController <NSCollectionViewDataSource, NSCollectionViewDelegate>
 {
-    NSTableView * tableView;
+    NSCollectionView * collectionView;
     NSArray * workKeys;
 }
 

@@ -1,5 +1,7 @@
 /*
     SCLibraryWindowController.m
+
+    Grid (cover-shelf) browser over every work the reader has opened.
  */
 
 #import "SCLibraryWindowController.h"
@@ -7,7 +9,87 @@
 #import "SCCoverCache.h"
 #import "SimpleComicAppDelegate.h"
 
-static const CGFloat SCLibraryRowHeight = 92.0f;
+
+#pragma mark - Collection item
+
+
+@interface SCLibraryItem : NSCollectionViewItem
+@end
+
+@implementation SCLibraryItem
+
+- (void)loadView
+{
+    NSView * v = [[[NSView alloc] initWithFrame: NSMakeRect(0, 0, 170, 250)] autorelease];
+    [v setWantsLayer: YES];
+
+    NSImageView * iv = [[[NSImageView alloc] initWithFrame: NSMakeRect(10, 40, 150, 200)] autorelease];
+    [iv setImageScaling: NSImageScaleProportionallyUpOrDown];
+    [iv setImageAlignment: NSImageAlignBottom];
+    [iv setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
+    [v addSubview: iv];
+    self.imageView = iv;
+
+    NSTextField * tf = [[[NSTextField alloc] initWithFrame: NSMakeRect(6, 4, 158, 32)] autorelease];
+    [tf setEditable: NO];
+    [tf setSelectable: NO];
+    [tf setBordered: NO];
+    [tf setDrawsBackground: NO];
+    [tf setAlignment: NSTextAlignmentCenter];
+    [tf setFont: [NSFont systemFontOfSize: 11]];
+    [tf setLineBreakMode: NSLineBreakByTruncatingMiddle];
+    [tf setMaximumNumberOfLines: 2];
+    [tf setAutoresizingMask: NSViewWidthSizable | NSViewMaxYMargin];
+    [v addSubview: tf];
+    self.textField = tf;
+
+    self.view = v;
+}
+
+- (void)setSelected:(BOOL)selected
+{
+    [super setSelected: selected];
+    NSColor * highlight;
+    if(@available(macOS 10.14, *))
+    {
+        highlight = [NSColor selectedContentBackgroundColor];
+    }
+    else
+    {
+        highlight = [NSColor alternateSelectedControlColor];
+    }
+    self.view.layer.cornerRadius = 6.0;
+    self.view.layer.backgroundColor = selected
+        ? [[highlight colorWithAlphaComponent: 0.30] CGColor]
+        : NULL;
+}
+
+@end
+
+
+#pragma mark - Collection view (selects under the cursor before a context menu)
+
+
+@interface SCLibraryCollectionView : NSCollectionView
+@end
+
+@implementation SCLibraryCollectionView
+
+- (NSMenu *)menuForEvent:(NSEvent *)event
+{
+    NSPoint p = [self convertPoint: [event locationInWindow] fromView: nil];
+    NSIndexPath * ip = [self indexPathForItemAtPoint: p];
+    if(ip)
+    {
+        [self setSelectionIndexPaths: [NSSet setWithObject: ip]];
+    }
+    return [self menu];
+}
+
+@end
+
+
+#pragma mark - Window controller
 
 
 @implementation SCLibraryWindowController
@@ -15,7 +97,7 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
 
 - (id)init
 {
-    NSRect frame = NSMakeRect(0, 0, 720, 520);
+    NSRect frame = NSMakeRect(0, 0, 760, 560);
     NSWindow * window = [[[NSWindow alloc] initWithContentRect: frame
                                                      styleMask: (NSWindowStyleMaskTitled |
                                                                  NSWindowStyleMaskClosable |
@@ -25,7 +107,7 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
                                                          defer: YES] autorelease];
     [window setTitle: NSLocalizedString(@"Library", @"Library window title")];
     [window setReleasedWhenClosed: NO];
-    [window setMinSize: NSMakeSize(420, 280)];
+    [window setMinSize: NSMakeSize(420, 320)];
     [window center];
 
     self = [super initWithWindow: window];
@@ -36,32 +118,39 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
         [scrollView setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
         [scrollView setBorderType: NSNoBorder];
 
-        tableView = [[NSTableView alloc] initWithFrame: [scrollView bounds]];
-        NSTableColumn * column = [[[NSTableColumn alloc] initWithIdentifier: @"work"] autorelease];
-        [column setResizingMask: NSTableColumnAutoresizingMask];
-        [tableView addTableColumn: column];
-        [tableView setHeaderView: nil];
-        [tableView setRowHeight: SCLibraryRowHeight];
-        [tableView setDataSource: self];
-        [tableView setDelegate: self];
-        [tableView setTarget: self];
-        [tableView setDoubleAction: @selector(openSelected:)];
-        [tableView setAllowsMultipleSelection: NO];
+        NSCollectionViewFlowLayout * layout = [[[NSCollectionViewFlowLayout alloc] init] autorelease];
+        [layout setItemSize: NSMakeSize(170, 250)];
+        [layout setMinimumInteritemSpacing: 8];
+        [layout setMinimumLineSpacing: 12];
+        [layout setSectionInset: NSEdgeInsetsMake(14, 14, 14, 14)];
+
+        collectionView = [[SCLibraryCollectionView alloc] initWithFrame: [scrollView bounds]];
+        [collectionView setCollectionViewLayout: layout];
+        [collectionView setDataSource: self];
+        [collectionView setDelegate: self];
+        [collectionView setSelectable: YES];
+        [collectionView setAllowsEmptySelection: YES];
+        [collectionView setAllowsMultipleSelection: NO];
+        [collectionView setBackgroundColors: @[[NSColor controlBackgroundColor]]];
+        [collectionView registerClass: [SCLibraryItem class]
+                forItemWithIdentifier: @"item"];
+
+        NSClickGestureRecognizer * dbl = [[[NSClickGestureRecognizer alloc]
+            initWithTarget: self action: @selector(handleDoubleClick:)] autorelease];
+        [dbl setNumberOfClicksRequired: 2];
+        [dbl setDelaysPrimaryMouseButtonEvents: NO];
+        [collectionView addGestureRecognizer: dbl];
 
         NSMenu * contextMenu = [[[NSMenu alloc] initWithTitle: @"Library"] autorelease];
-        [contextMenu addItemWithTitle: NSLocalizedString(@"Open", @"")
-                               action: @selector(openSelected:)
-                        keyEquivalent: @""];
-        [contextMenu addItemWithTitle: NSLocalizedString(@"Remove from Library", @"")
-                               action: @selector(removeSelected:)
-                        keyEquivalent: @""];
-        for(NSMenuItem * mi in [contextMenu itemArray])
-        {
-            [mi setTarget: self];
-        }
-        [tableView setMenu: contextMenu];
+        [[contextMenu addItemWithTitle: NSLocalizedString(@"Open", @"")
+                                action: @selector(openSelected:)
+                         keyEquivalent: @""] setTarget: self];
+        [[contextMenu addItemWithTitle: NSLocalizedString(@"Remove from Library", @"")
+                                action: @selector(removeSelected:)
+                         keyEquivalent: @""] setTarget: self];
+        [collectionView setMenu: contextMenu];
 
-        [scrollView setDocumentView: tableView];
+        [scrollView setDocumentView: collectionView];
         [window setContentView: scrollView];
 
         [[NSNotificationCenter defaultCenter] addObserver: self
@@ -76,7 +165,7 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver: self];
-    [tableView release];
+    [collectionView release];
     [workKeys release];
     [super dealloc];
 }
@@ -87,7 +176,7 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
     NSArray * keys = [[[SCProgressStore sharedStore] allWorkKeys] copy];
     [workKeys release];
     workKeys = keys;
-    [tableView reloadData];
+    [collectionView reloadData];
 }
 
 
@@ -102,32 +191,52 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
 - (void)coverReady:(NSNotification *)note
 {
     NSString * key = [[note userInfo] objectForKey: @"key"];
-    NSUInteger row = [workKeys indexOfObject: key];
-    if(row != NSNotFound)
+    NSUInteger idx = [workKeys indexOfObject: key];
+    if(idx != NSNotFound)
     {
-        [tableView reloadDataForRowIndexes: [NSIndexSet indexSetWithIndex: row]
-                             columnIndexes: [NSIndexSet indexSetWithIndex: 0]];
+        NSIndexPath * ip = [NSIndexPath indexPathForItem: idx inSection: 0];
+        [collectionView reloadItemsAtIndexPaths: [NSSet setWithObject: ip]];
     }
+}
+
+
+#pragma mark - Selection helpers
+
+
+- (NSString *)keyForIndexPath:(NSIndexPath *)ip
+{
+    NSInteger i = [ip item];
+    if(ip && i >= 0 && i < (NSInteger)[workKeys count])
+    {
+        return [workKeys objectAtIndex: i];
+    }
+    return nil;
+}
+
+
+- (NSString *)selectedKey
+{
+    return [self keyForIndexPath: [[collectionView selectionIndexPaths] anyObject]];
 }
 
 
 #pragma mark - Actions
 
 
-- (NSString *)keyForRow:(NSInteger)row
+- (void)handleDoubleClick:(NSGestureRecognizer *)gesture
 {
-    if(row >= 0 && row < (NSInteger)[workKeys count])
+    NSPoint p = [gesture locationInView: collectionView];
+    NSString * key = [self keyForIndexPath: [collectionView indexPathForItemAtPoint: p]];
+    if([key length])
     {
-        return [workKeys objectAtIndex: row];
+        [(SimpleComicAppDelegate *)[NSApp delegate] openWorkAtPath: key];
     }
-    return nil;
 }
 
 
 - (void)openSelected:(id)sender
 {
-    NSInteger row = [tableView clickedRow] >= 0 ? [tableView clickedRow] : [tableView selectedRow];
-    NSString * key = [self keyForRow: row];
+    NSString * key = [self selectedKey];
     if([key length])
     {
         [(SimpleComicAppDelegate *)[NSApp delegate] openWorkAtPath: key];
@@ -137,8 +246,7 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
 
 - (void)removeSelected:(id)sender
 {
-    NSInteger row = [tableView clickedRow] >= 0 ? [tableView clickedRow] : [tableView selectedRow];
-    NSString * key = [self keyForRow: row];
+    NSString * key = [self selectedKey];
     if([key length])
     {
         [[SCProgressStore sharedStore] removeRecordForKey: key];
@@ -160,101 +268,39 @@ static const CGFloat SCLibraryRowHeight = 92.0f;
 }
 
 
-#pragma mark - Table data source / delegate
+#pragma mark - Collection data source
 
 
-- (NSInteger)numberOfRowsInTableView:(NSTableView *)tv
+- (NSInteger)collectionView:(NSCollectionView *)cv numberOfItemsInSection:(NSInteger)section
 {
     return [workKeys count];
 }
 
 
-- (NSView *)tableView:(NSTableView *)tv
-   viewForTableColumn:(NSTableColumn *)column
-                  row:(NSInteger)row
+- (NSCollectionViewItem *)collectionView:(NSCollectionView *)cv
+     itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
-    NSString * key = [self keyForRow: row];
-    if(!key)
-    {
-        return nil;
-    }
-
-    NSView * cell = [tv makeViewWithIdentifier: @"SCLibraryCell" owner: self];
-    NSImageView * cover;
-    NSTextField * title;
-    NSTextField * detail;
-
-    if(!cell)
-    {
-        cell = [[[NSView alloc] initWithFrame: NSMakeRect(0, 0, 600, SCLibraryRowHeight)] autorelease];
-        [cell setIdentifier: @"SCLibraryCell"];
-
-        cover = [[[NSImageView alloc] initWithFrame: NSMakeRect(8, 6, 60, SCLibraryRowHeight - 12)] autorelease];
-        [cover setImageScaling: NSImageScaleProportionallyUpOrDown];
-        [cover setImageAlignment: NSImageAlignCenter];
-        [cover setTag: 1];
-        [cover setAutoresizingMask: NSViewHeightSizable];
-        [cell addSubview: cover];
-
-        title = [[[NSTextField alloc] initWithFrame: NSMakeRect(80, 50, 500, 22)] autorelease];
-        [title setEditable: NO];
-        [title setBordered: NO];
-        [title setDrawsBackground: NO];
-        [title setFont: [NSFont boldSystemFontOfSize: 14]];
-        [title setLineBreakMode: NSLineBreakByTruncatingTail];
-        [title setTag: 2];
-        [title setAutoresizingMask: NSViewWidthSizable | NSViewMinYMargin];
-        [cell addSubview: title];
-
-        detail = [[[NSTextField alloc] initWithFrame: NSMakeRect(80, 14, 500, 32)] autorelease];
-        [detail setEditable: NO];
-        [detail setBordered: NO];
-        [detail setDrawsBackground: NO];
-        [detail setFont: [NSFont systemFontOfSize: 11]];
-        [detail setTextColor: [NSColor secondaryLabelColor]];
-        [detail setTag: 3];
-        [detail setAutoresizingMask: NSViewWidthSizable | NSViewMaxYMargin];
-        [cell addSubview: detail];
-    }
-    else
-    {
-        cover = (NSImageView *)[cell viewWithTag: 1];
-        title = (NSTextField *)[cell viewWithTag: 2];
-        detail = (NSTextField *)[cell viewWithTag: 3];
-    }
+    SCLibraryItem * item = (SCLibraryItem *)[cv makeItemWithIdentifier: @"item" forIndexPath: indexPath];
+    NSString * key = [self keyForIndexPath: indexPath];
+    item.representedObject = key;
 
     NSImage * art = [[SCCoverCache sharedCache] coverForKey: key path: key];
     if(!art)
     {
         art = [[NSWorkspace sharedWorkspace] iconForFile: key];
     }
-    [cover setImage: art];
+    [item.imageView setImage: art];
 
-    [title setStringValue: [[key lastPathComponent] stringByDeletingPathExtension]];
-
+    NSString * title = [[key lastPathComponent] stringByDeletingPathExtension];
     NSDictionary * record = [[SCProgressStore sharedStore] recordForKey: key];
-    NSInteger lastPage = [[record objectForKey: @"lastPage"] integerValue];
-    NSInteger bookmarks = [[record objectForKey: @"bookmarks"] count];
-    BOOL webtoon = [[record objectForKey: @"layoutMode"] integerValue] == 1;
-    NSDate * updated = [record objectForKey: @"updated"];
-
-    NSString * when = @"";
-    if(updated)
+    if(record)
     {
-        NSDateFormatter * df = [[[NSDateFormatter alloc] init] autorelease];
-        [df setDateStyle: NSDateFormatterMediumStyle];
-        [df setTimeStyle: NSDateFormatterShortStyle];
-        when = [df stringFromDate: updated];
+        NSInteger lastPage = [[record objectForKey: @"lastPage"] integerValue];
+        title = [NSString stringWithFormat: @"%@\np.%ld", title, (long)(lastPage + 1)];
     }
-    NSString * detailText = [NSString stringWithFormat:
-        NSLocalizedString(@"Page %ld%@%@\n%@", @"Library row detail"),
-        (long)(lastPage + 1),
-        webtoon ? NSLocalizedString(@"  ·  Webtoon", @"") : @"",
-        bookmarks > 0 ? [NSString stringWithFormat: NSLocalizedString(@"  ·  %ld bookmarks", @""), (long)bookmarks] : @"",
-        when];
-    [detail setStringValue: detailText];
+    [item.textField setStringValue: title];
 
-    return cell;
+    return item;
 }
 
 @end
