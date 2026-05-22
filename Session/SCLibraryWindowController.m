@@ -8,6 +8,10 @@
 #import "SCProgressStore.h"
 #import "SCCoverCache.h"
 #import "SimpleComicAppDelegate.h"
+#import "TSSTManagedGroup.h"
+#import "TSSTPage.h"
+
+static NSString * const SCLibraryFolderKey = @"SCLibraryFolderBookmark";
 
 
 #pragma mark - Collection item
@@ -151,7 +155,37 @@
         [collectionView setMenu: contextMenu];
 
         [scrollView setDocumentView: collectionView];
-        [window setContentView: scrollView];
+
+        /* Header bar: choose-folder button + current folder label. */
+        NSView * content = [[[NSView alloc] initWithFrame: [[window contentView] bounds]] autorelease];
+        [content setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
+        CGFloat barH = 40.0;
+        NSRect cb = [content bounds];
+
+        NSButton * chooseButton = [[[NSButton alloc] initWithFrame:
+            NSMakeRect(10, NSMaxY(cb) - barH + 6, 150, 28)] autorelease];
+        [chooseButton setTitle: NSLocalizedString(@"Choose Folder…", @"")];
+        [chooseButton setBezelStyle: NSBezelStyleRounded];
+        [chooseButton setTarget: self];
+        [chooseButton setAction: @selector(chooseFolder:)];
+        [chooseButton setAutoresizingMask: NSViewMinYMargin];
+        [content addSubview: chooseButton];
+
+        folderLabel = [[NSTextField alloc] initWithFrame:
+            NSMakeRect(170, NSMaxY(cb) - barH + 9, NSWidth(cb) - 180, 22)];
+        [folderLabel setEditable: NO];
+        [folderLabel setBordered: NO];
+        [folderLabel setDrawsBackground: NO];
+        [folderLabel setFont: [NSFont systemFontOfSize: 11]];
+        [folderLabel setTextColor: [NSColor secondaryLabelColor]];
+        [folderLabel setLineBreakMode: NSLineBreakByTruncatingMiddle];
+        [folderLabel setAutoresizingMask: NSViewWidthSizable | NSViewMinYMargin];
+        [content addSubview: folderLabel];
+
+        [scrollView setFrame: NSMakeRect(0, 0, NSWidth(cb), NSHeight(cb) - barH)];
+        [content addSubview: scrollView];
+
+        [window setContentView: content];
 
         [[NSNotificationCenter defaultCenter] addObserver: self
                                                  selector: @selector(coverReady:)
@@ -166,16 +200,131 @@
 {
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     [collectionView release];
+    [folderLabel release];
     [workKeys release];
     [super dealloc];
 }
 
 
+- (NSURL *)libraryFolderURL
+{
+    NSData * bm = [[NSUserDefaults standardUserDefaults] objectForKey: SCLibraryFolderKey];
+    if(![bm isKindOfClass: [NSData class]])
+    {
+        return nil;
+    }
+    BOOL stale = NO;
+    return [NSURL URLByResolvingBookmarkData: bm
+                                    options: NSURLBookmarkResolutionWithSecurityScope
+                              relativeToURL: nil
+                        bookmarkDataIsStale: &stale
+                                      error: NULL];
+}
+
+
+- (BOOL)folderHasImage:(NSString *)dirPath
+{
+    NSArray * imgExt = [TSSTPage imageExtensions];
+    for(NSString * n in [[NSFileManager defaultManager] contentsOfDirectoryAtPath: dirPath error: NULL])
+    {
+        if([imgExt containsObject: [[n pathExtension] lowercaseString]])
+        {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+
+/* Top-level archives and image-containing subfolders of the chosen
+   library folder (caller must hold security-scoped access). */
+- (NSArray *)scannedWorkPathsInFolder:(NSURL *)folder
+{
+    NSFileManager * fm = [NSFileManager defaultManager];
+    NSString * dir = [folder path];
+    NSMutableArray * result = [NSMutableArray array];
+    NSArray * names = [[fm contentsOfDirectoryAtPath: dir error: NULL]
+                       sortedArrayUsingSelector: @selector(localizedStandardCompare:)];
+    NSArray * archExt = [TSSTManagedArchive archiveExtensions];
+    for(NSString * name in names)
+    {
+        if([name hasPrefix: @"."]) continue;
+        NSString * full = [dir stringByAppendingPathComponent: name];
+        BOOL isDir = NO;
+        if(![fm fileExistsAtPath: full isDirectory: &isDir]) continue;
+        if(isDir)
+        {
+            if([self folderHasImage: full]) [result addObject: full];
+        }
+        else if([archExt containsObject: [[name pathExtension] lowercaseString]])
+        {
+            [result addObject: full];
+        }
+    }
+    return result;
+}
+
+
+- (IBAction)chooseFolder:(id)sender
+{
+    NSOpenPanel * panel = [NSOpenPanel openPanel];
+    [panel setCanChooseFiles: NO];
+    [panel setCanChooseDirectories: YES];
+    [panel setAllowsMultipleSelection: NO];
+    [panel setPrompt: NSLocalizedString(@"Choose", @"")];
+    if([panel runModal] != NSModalResponseOK)
+    {
+        return;
+    }
+    NSURL * url = [[panel URLs] firstObject];
+    NSData * bm = [url bookmarkDataWithOptions: NSURLBookmarkCreationWithSecurityScope
+                includingResourceValuesForKeys: nil
+                                 relativeToURL: nil
+                                         error: NULL];
+    if(bm)
+    {
+        [[NSUserDefaults standardUserDefaults] setObject: bm forKey: SCLibraryFolderKey];
+        [self reload];
+    }
+}
+
+
 - (void)reload
 {
-    NSArray * keys = [[[SCProgressStore sharedStore] allWorkKeys] copy];
+    NSMutableArray * keys = [NSMutableArray array];
+    NSMutableSet * seen = [NSMutableSet set];
+
+    for(NSString * k in [[SCProgressStore sharedStore] allWorkKeys])
+    {
+        if([k length] && ![seen containsObject: k])
+        {
+            [keys addObject: k];
+            [seen addObject: k];
+        }
+    }
+
+    NSURL * folder = [self libraryFolderURL];
+    if(folder)
+    {
+        BOOL access = [folder startAccessingSecurityScopedResource];
+        for(NSString * p in [self scannedWorkPathsInFolder: folder])
+        {
+            if([p length] && ![seen containsObject: p])
+            {
+                [keys addObject: p];
+                [seen addObject: p];
+            }
+        }
+        if(access) [folder stopAccessingSecurityScopedResource];
+        [folderLabel setStringValue: [folder path]];
+    }
+    else
+    {
+        [folderLabel setStringValue: NSLocalizedString(@"No library folder chosen", @"")];
+    }
+
     [workKeys release];
-    workKeys = keys;
+    workKeys = [keys copy];
     [collectionView reloadData];
 }
 

@@ -13,6 +13,7 @@
 {
     NSCollectionView * collectionView;
     NSArray * workKeys;
+    NSTextField * folderLabel;
 }
 
 - (void)reload;
