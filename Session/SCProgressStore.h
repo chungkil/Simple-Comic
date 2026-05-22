@@ -39,4 +39,7 @@
 - (NSArray *)allWorkKeys;
 - (void)removeRecordForKey:(NSString *)key;
 
+/* Human-readable multi-line reading statistics. */
+- (NSString *)statisticsSummary;
+
 @end

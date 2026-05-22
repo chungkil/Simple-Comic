@@ -448,6 +448,31 @@ static NSArray * allAvailableStringEncodings(void)
 }
 
 
+- (IBAction)showStats:(id)sender
+{
+	if(!statsWindow)
+	{
+		statsWindow = [[NSWindow alloc] initWithContentRect: NSMakeRect(0, 0, 360, 180)
+												  styleMask: (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
+													backing: NSBackingStoreBuffered
+													  defer: YES];
+		[statsWindow setTitle: NSLocalizedString(@"Reading Stats", @"")];
+		[statsWindow setReleasedWhenClosed: NO];
+		[statsWindow center];
+
+		statsField = [[NSTextField alloc] initWithFrame: NSInsetRect([[statsWindow contentView] bounds], 18, 18)];
+		[statsField setEditable: NO];
+		[statsField setBordered: NO];
+		[statsField setDrawsBackground: NO];
+		[statsField setFont: [NSFont systemFontOfSize: 13]];
+		[statsField setAutoresizingMask: NSViewWidthSizable | NSViewHeightSizable];
+		[[statsWindow contentView] addSubview: statsField];
+	}
+	[statsField setStringValue: [[SCProgressStore sharedStore] statisticsSummary]];
+	[statsWindow makeKeyAndOrderFront: sender];
+}
+
+
 - (void)renameBookmark:(id)sender
 {
 	[[self activeSessionController] renameBookmarkAtIndex: [[sender representedObject] integerValue]];

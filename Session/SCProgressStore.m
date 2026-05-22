@@ -168,6 +168,52 @@
 }
 
 
+- (NSString *)statisticsSummary
+{
+    NSUInteger works = [records count];
+    NSUInteger bookmarks = 0;
+    NSInteger pages = 0;
+    NSUInteger recent7 = 0;
+    NSDate * cutoff = [NSDate dateWithTimeIntervalSinceNow: -7 * 24 * 3600];
+    NSString * lastName = nil;
+    NSDate * lastDate = nil;
+
+    for(NSString * key in records)
+    {
+        NSDictionary * r = [records objectForKey: key];
+        bookmarks += [[r objectForKey: @"bookmarks"] count];
+        pages += [[r objectForKey: @"lastPage"] integerValue] + 1;
+        NSDate * u = [r objectForKey: @"updated"];
+        if(u)
+        {
+            if([u compare: cutoff] == NSOrderedDescending) recent7++;
+            if(!lastDate || [u compare: lastDate] == NSOrderedDescending)
+            {
+                lastDate = u;
+                lastName = [key lastPathComponent];
+            }
+        }
+    }
+
+    NSString * lastLine;
+    if(lastName)
+    {
+        NSDateFormatter * df = [[[NSDateFormatter alloc] init] autorelease];
+        [df setDateStyle: NSDateFormatterMediumStyle];
+        [df setTimeStyle: NSDateFormatterShortStyle];
+        lastLine = [NSString stringWithFormat: @"마지막 읽음: %@ (%@)", lastName, [df stringFromDate: lastDate]];
+    }
+    else
+    {
+        lastLine = @"마지막 읽음: 없음";
+    }
+
+    return [NSString stringWithFormat:
+        @"작품 수: %lu\n도달 페이지 합계: %ld\n북마크: %lu\n최근 7일 읽은 작품: %lu\n%@",
+        (unsigned long)works, (long)pages, (unsigned long)bookmarks, (unsigned long)recent7, lastLine];
+}
+
+
 - (void)removeBookmarkAtIndex:(NSInteger)index forKey:(NSString *)key
 {
     NSMutableArray * marks = [[self mutableRecordForKey: key create: NO] objectForKey: @"bookmarks"];

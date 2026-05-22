@@ -117,6 +117,10 @@ extern NSString * TSSTSessionEndNotification;
 
 /*  The single browse/catalog window, created on first use. */
 	id        libraryController;
+
+/*  Reading-stats window, created on first use. */
+	NSWindow * statsWindow;
+	NSTextField * statsField;
 }
 
 
@@ -149,6 +153,9 @@ extern NSString * TSSTSessionEndNotification;
 
 /*  Shows the library / shelf window. */
 - (IBAction)showLibrary:(id)sender;
+
+/*  Shows the reading-statistics window. */
+- (IBAction)showStats:(id)sender;
 
 /*  When an end session notification is received this method
 	is called. */
