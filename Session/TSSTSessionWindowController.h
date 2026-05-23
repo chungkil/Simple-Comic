@@ -204,6 +204,10 @@ enum PageSelectionMode {
 - (IBAction)removePages:(id)sender;
 - (IBAction)rotateSavePageRight:(id)sender;
 - (IBAction)rotateSavePageLeft:(id)sender;
+- (IBAction)rotateSaveAllPagesRight:(id)sender;
+- (IBAction)rotateSaveAllPagesLeft:(id)sender;
+- (IBAction)movePageUp:(id)sender;
+- (IBAction)movePageDown:(id)sender;
 /* Converts a non-zip archive (CBR/7z/…) to a sibling CBZ so it can be edited */
 - (IBAction)convertToCBZ:(id)sender;
 - (NSString *)convertArchiveToCBZ:(NSString *)archivePath error:(NSString **)errMsg;

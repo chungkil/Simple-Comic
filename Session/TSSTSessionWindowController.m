@@ -2026,10 +2026,21 @@ images are currently visible and then skips over them.
 		valid = ![[session valueForKey: TSSTViewRotation] intValue];
 	}
 	else if ([menuItem action] == @selector(rotateSavePageRight:)
-		  || [menuItem action] == @selector(rotateSavePageLeft:))
+		  || [menuItem action] == @selector(rotateSavePageLeft:)
+		  || [menuItem action] == @selector(rotateSaveAllPagesRight:)
+		  || [menuItem action] == @selector(rotateSaveAllPagesLeft:))
 	{
 		valid = ![[session valueForKey: TSSTViewRotation] intValue]
 			&& [[pageController arrangedObjects] count] > 0;
+	}
+	else if ([menuItem action] == @selector(movePageUp:)
+		  || [menuItem action] == @selector(movePageDown:))
+	{
+		NSInteger count = (NSInteger)[[pageController arrangedObjects] count];
+		NSInteger sel = (NSInteger)[pageController selectionIndex];
+		BOOL up = ([menuItem action] == @selector(movePageUp:));
+		valid = count > 1 && sel >= 0 && sel < count
+			&& (up ? sel > 0 : sel < count - 1);
 	}
 	else if ([menuItem action] == @selector(convertToCBZ:))
 	{
@@ -2429,6 +2440,65 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 - (IBAction)rotateSavePageLeft:(id)sender
 {
 	[self recordRotationDelta: -90];
+}
+
+
+- (void)recordBulkRotationDelta:(NSInteger)delta
+{
+	NSArray * pages = [pageController arrangedObjects];
+	if(![pages count]) { NSBeep(); return; }
+	NSUInteger applied = 0;
+	for(TSSTPage * page in pages)
+	{
+		if([[page valueForKey: @"text"] boolValue]) continue;
+		TSSTManagedGroup * group = [page valueForKey: @"group"];
+		NSString * entry = [page valueForKey: @"imagePath"];
+		if([group isKindOfClass: [TSSTManagedArchive class]])
+		{
+			NSString * ap = [group valueForKey: @"path"];
+			NSString * ext = [[ap pathExtension] lowercaseString];
+			if(!([ext isEqualToString: @"zip"] || [ext isEqualToString: @"cbz"])) continue;
+			if(!ap || !entry) continue;
+			NSMutableDictionary * m = pendingArchiveRotations[ap];
+			if(!m) { m = [NSMutableDictionary dictionary]; pendingArchiveRotations[ap] = m; }
+			NSInteger nv = (([m[entry] integerValue] + delta) % 360 + 360) % 360;
+			if(nv == 0) [m removeObjectForKey: entry]; else m[entry] = @(nv);
+			if(![m count]) [pendingArchiveRotations removeObjectForKey: ap];
+		}
+		else if(entry && [entry isAbsolutePath])
+		{
+			NSInteger nv = (([pendingFolderRotations[entry] integerValue] + delta) % 360 + 360) % 360;
+			if(nv == 0) [pendingFolderRotations removeObjectForKey: entry];
+			else pendingFolderRotations[entry] = @(nv);
+		}
+		else
+		{
+			continue;
+		}
+		applied++;
+	}
+	if(!applied) { NSBeep(); return; }
+	[pagedImageCache removeAllObjects];
+	[self changeViewImages];
+	if([self isWebtoonMode] && webtoonView) [webtoonView relayoutPreservingAnchor];
+}
+
+
+- (IBAction)rotateSaveAllPagesRight:(id)sender { [self recordBulkRotationDelta: 90]; }
+- (IBAction)rotateSaveAllPagesLeft:(id)sender  { [self recordBulkRotationDelta: -90]; }
+
+
+- (IBAction)movePageUp:(id)sender
+{
+	NSInteger from = [pageController selectionIndex];
+	[self thumbnailView: nil didMovePageFromIndex: from toIndex: from - 1];
+}
+
+
+- (IBAction)movePageDown:(id)sender
+{
+	NSInteger from = [pageController selectionIndex];
+	[self thumbnailView: nil didMovePageFromIndex: from toIndex: from + 1];
 }
 
 

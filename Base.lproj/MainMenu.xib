@@ -130,6 +130,27 @@ CA
                                     <action selector="rotateSavePageLeft:" target="-1" id="scRot0004"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Rotate All Pages Right (Save on Close)" keyEquivalent="" id="scRot0005">
+                                <connections>
+                                    <action selector="rotateSaveAllPagesRight:" target="-1" id="scRot0006"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Rotate All Pages Left (Save on Close)" keyEquivalent="" id="scRot0007">
+                                <connections>
+                                    <action selector="rotateSaveAllPagesLeft:" target="-1" id="scRot0008"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="scMv0000"/>
+                            <menuItem title="Move Page Up" keyEquivalent="[" id="scMv0001">
+                                <connections>
+                                    <action selector="movePageUp:" target="-1" id="scMv0002"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Move Page Down" keyEquivalent="]" id="scMv0003">
+                                <connections>
+                                    <action selector="movePageDown:" target="-1" id="scMv0004"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="scCvt0000"/>
                             <menuItem title="Convert to CBZ…" keyEquivalent="" id="scCvt0001">
                                 <connections>
