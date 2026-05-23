@@ -751,7 +751,7 @@
 		int loupeDiameter = [[defaultsController valueForKey: TSSTLoupeDiameter] intValue];
 		loupeDiameter += [theEvent deltaY] > 0 ? 30 : -30;
 		loupeDiameter = loupeDiameter < 150 ? 150 : loupeDiameter;
-		loupeDiameter = loupeDiameter > 500 ? 500 : loupeDiameter;
+		loupeDiameter = loupeDiameter > 1500 ? 1500 : loupeDiameter;
 		[defaultsController setValue: @(loupeDiameter) forKey: TSSTLoupeDiameter];
 	}
 	else if((modifier & NSAlternateKeyMask) && [theEvent deltaY])
