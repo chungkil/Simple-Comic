@@ -64,6 +64,7 @@ extern NSString * TSSTUpdateSelection;
 extern NSString * TSSTWebtoonMode;
 extern NSString * TSSTWebtoonGap;
 extern NSString * TSSTWebtoonMaxWidth;
+extern NSString * TSSTReorderPreserveStructure;
 extern NSString * TSSTSessionEndNotification;
 
 

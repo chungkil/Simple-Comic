@@ -66,6 +66,7 @@ NSString * TSSTUpdateSelection =   @"updateSelection";
 NSString * TSSTWebtoonMode =       @"webtoonMode";
 NSString * TSSTWebtoonGap =        @"webtoonGap";
 NSString * TSSTWebtoonMaxWidth =   @"webtoonMaxWidth";
+NSString * TSSTReorderPreserveStructure = @"reorderPreserveStructure";
 
 NSString * TSSTSessionEndNotification = @"sessionEnd";
 
@@ -204,6 +205,7 @@ static NSArray * allAvailableStringEncodings(void)
 	standardDefaults[TSSTWebtoonMode] = @NO;
 	standardDefaults[TSSTWebtoonGap] = @0;
 	standardDefaults[TSSTWebtoonMaxWidth] = @0;
+	standardDefaults[TSSTReorderPreserveStructure] = @NO;
 
 	NSUserDefaultsController * sharedDefaultsController = [NSUserDefaultsController sharedUserDefaultsController];
 	[sharedDefaultsController setInitialValues: standardDefaults];

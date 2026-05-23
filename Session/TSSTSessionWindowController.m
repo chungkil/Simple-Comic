@@ -577,6 +577,13 @@ static void SCSetOrdinalForPage(id page, double v)
 }
 
 
+- (IBAction)toggleReorderPreserveStructure:(id)sender
+{
+    NSUserDefaults * d = [NSUserDefaults standardUserDefaults];
+    [d setBool: ![d boolForKey: TSSTReorderPreserveStructure] forKey: TSSTReorderPreserveStructure];
+}
+
+
 - (NSString *)workIdentifier
 {
     /* A session that mixes works from more than one top-level source has
@@ -1981,6 +1988,11 @@ images are currently visible and then skips over them.
         state = ([[NSUserDefaults standardUserDefaults] integerForKey: TSSTWebtoonMaxWidth] == [menuItem tag]) ? NSOnState : NSOffState;
         [menuItem setState: state];
     }
+    else if([menuItem action] == @selector(toggleReorderPreserveStructure:))
+    {
+        state = [[NSUserDefaults standardUserDefaults] boolForKey: TSSTReorderPreserveStructure] ? NSOnState : NSOffState;
+        [menuItem setState: state];
+    }
     else if([menuItem action] == @selector(changePageOrder:))
     {
         if([[session valueForKey: TSSTPageOrder] boolValue])
@@ -2789,15 +2801,31 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 			continue;
 		}
 
+		BOOL preserve = [[NSUserDefaults standardUserDefaults] boolForKey: TSSTReorderPreserveStructure];
 		for(NSUInteger i = 0; i < [order count]; ++i)
 		{
 			NSString * orig = order[i];
 			NSString * src = [extractDir stringByAppendingPathComponent: orig];
 			if(![fm fileExistsAtPath: src]) continue;
-			NSString * ext = [[orig pathExtension] lowercaseString];
-			NSString * dst = [stagingDir stringByAppendingPathComponent:
-				[NSString stringWithFormat: @"page%04lu.%@", (unsigned long)(i + 1),
-					[ext length] ? ext : @"bin"]];
+			NSString * dst;
+			if(preserve)
+			{
+				NSString * origDir = [orig stringByDeletingLastPathComponent];
+				NSString * origBase = [orig lastPathComponent];
+				NSString * newName = [NSString stringWithFormat: @"%04lu-%@", (unsigned long)(i + 1), origBase];
+				NSString * destDir = [origDir length]
+					? [stagingDir stringByAppendingPathComponent: origDir]
+					: stagingDir;
+				[fm createDirectoryAtPath: destDir withIntermediateDirectories: YES attributes: nil error: NULL];
+				dst = [destDir stringByAppendingPathComponent: newName];
+			}
+			else
+			{
+				NSString * ext = [[orig pathExtension] lowercaseString];
+				dst = [stagingDir stringByAppendingPathComponent:
+					[NSString stringWithFormat: @"page%04lu.%@", (unsigned long)(i + 1),
+						[ext length] ? ext : @"bin"]];
+			}
 			[fm moveItemAtPath: src toPath: dst error: NULL];
 		}
 

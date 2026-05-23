@@ -269,6 +269,11 @@ CA
                                     </items>
                                 </menu>
                             </menuItem>
+                            <menuItem title="Preserve Subdirs on Reorder" id="scPS00">
+                                <connections>
+                                    <action selector="toggleReorderPreserveStructure:" target="-1" id="scPS01"/>
+                                </connections>
+                            </menuItem>
                             <menuItem title="Webtoon Width" id="scWW00">
                                 <menu key="submenu" title="Webtoon Width" id="scWW01">
                                     <items>
