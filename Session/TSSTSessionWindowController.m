@@ -579,15 +579,26 @@ static void SCSetOrdinalForPage(id page, double v)
 
 - (NSString *)workIdentifier
 {
-    if([[pageController arrangedObjects] count] <= 0)
+    /* A session that mixes works from more than one top-level source has
+       no stable single-file identifier; return nil so progress is not
+       silently keyed on the first archive only. */
+    NSString * unique = nil;
+    for(TSSTPage * page in [pageController arrangedObjects])
     {
-        return nil;
+        NSString * path = [page valueForKey: @"group"]
+            ? [page valueForKeyPath: @"group.topLevelGroup.path"]
+            : [page valueForKeyPath: @"imagePath"];
+        if(![path length]) continue;
+        if(!unique)
+        {
+            unique = path;
+        }
+        else if(![unique isEqualToString: path])
+        {
+            return nil;
+        }
     }
-    TSSTPage * page = [pageController arrangedObjects][0];
-    NSString * path = [page valueForKey: @"group"] ?
-        [page valueForKeyPath: @"group.topLevelGroup.path"] :
-        [page valueForKeyPath: @"imagePath"];
-    return path;
+    return unique;
 }
 
 
