@@ -172,14 +172,31 @@ static NSSize monospaceCharacterSize;
 	if(!thumbnailData)
 	{
 		thumbnailData = [self prepThumbnail];
-		[self setValue: thumbnailData forKey: @"thumbnailData"];
-		thumbnail = [[[NSImage alloc] initWithData: thumbnailData] autorelease];
+		if(thumbnailData)
+		{
+			if([NSThread isMainThread])
+			{
+				[self setValue: thumbnailData forKey: @"thumbnailData"];
+			}
+			else
+			{
+				/* Core Data property writes must happen on the MOC's
+				   owning thread (main).  Hop back so the background
+				   thumbnail generator doesn't trip thread-confinement. */
+				NSData * cached = [thumbnailData retain];
+				dispatch_async(dispatch_get_main_queue(), ^{
+					[self setValue: cached forKey: @"thumbnailData"];
+					[cached release];
+				});
+			}
+			thumbnail = [[[NSImage alloc] initWithData: thumbnailData] autorelease];
+		}
 	}
 	else
 	{
 		thumbnail = [[[NSImage alloc] initWithData: thumbnailData] autorelease];
 	}
-	
+
     return thumbnail;
 }
 
@@ -189,23 +206,44 @@ static NSSize monospaceCharacterSize;
 	[thumbLock lock];
 	NSImage * managedImage = [self pageImage];
 	NSData * thumbnailData = nil;
-	NSSize pixelSize = [managedImage size];
 	if(managedImage)
 	{
-		pixelSize = sizeConstrainedByDimension(pixelSize, 256);	
-		NSImage * temp = [[NSImage alloc] initWithSize: pixelSize];
-		[temp lockFocus];
-		[[NSGraphicsContext currentContext] setImageInterpolation: NSImageInterpolationHigh];
-		[managedImage drawInRect: NSMakeRect(0, 0, pixelSize.width, pixelSize.height) 
-						fromRect: NSZeroRect 
-					   operation: NSCompositeSourceOver 
-						fraction: 1.0];
-		[temp unlockFocus];
-		thumbnailData = [[temp TIFFRepresentation] retain];
-		[temp release];
+		NSSize pixelSize = sizeConstrainedByDimension([managedImage size], 256);
+		NSInteger w = (NSInteger)ceil(pixelSize.width);
+		NSInteger h = (NSInteger)ceil(pixelSize.height);
+		if(w > 0 && h > 0)
+		{
+			/* NSImage -lockFocus is bound to the main thread on modern
+			   macOS.  Use an NSBitmapImageRep-backed graphics context so
+			   thumbnail generation is safe from the background. */
+			NSBitmapImageRep * rep = [[NSBitmapImageRep alloc]
+				initWithBitmapDataPlanes: NULL
+				              pixelsWide: w
+				              pixelsHigh: h
+				           bitsPerSample: 8
+				         samplesPerPixel: 4
+				                hasAlpha: YES
+				                isPlanar: NO
+				          colorSpaceName: NSCalibratedRGBColorSpace
+				             bytesPerRow: 0
+				            bitsPerPixel: 0];
+			[rep setSize: NSMakeSize(w, h)];
+			NSGraphicsContext * ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep: rep];
+			[NSGraphicsContext saveGraphicsState];
+			[NSGraphicsContext setCurrentContext: ctx];
+			[ctx setImageInterpolation: NSImageInterpolationHigh];
+			[managedImage drawInRect: NSMakeRect(0, 0, w, h)
+							fromRect: NSZeroRect
+						   operation: NSCompositeSourceOver
+							fraction: 1.0];
+			[NSGraphicsContext restoreGraphicsState];
+			thumbnailData = [[rep representationUsingType: NSBitmapImageFileTypeJPEG
+											   properties: @{NSImageCompressionFactor: @0.85}] retain];
+			[rep release];
+		}
 	}
 	[thumbLock unlock];
-	
+
 	return [thumbnailData autorelease];
 }
 

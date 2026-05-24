@@ -53,6 +53,20 @@
 
 
 
+- (void)awakeFromNib
+{
+    /* TSSTKeyWindow is loaded from a nib with a titled styleMask, so the
+       programmatic -init overrides above never run.  Re-apply the
+       borderless + transparent look here so the thumbnail-expose bezel
+       shows the dim wash + thumbnails instead of an opaque black box. */
+    [self setStyleMask: NSWindowStyleMaskBorderless];
+    [self setOpaque: NO];
+    [self setBackgroundColor: [NSColor clearColor]];
+    [self setHasShadow: NO];
+}
+
+
+
 - (BOOL)canBecomeKeyWindow
 {
 	return YES;
