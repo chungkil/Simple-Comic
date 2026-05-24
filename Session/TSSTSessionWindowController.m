@@ -42,6 +42,7 @@
 #import "TSSTManagedGroup.h"
 #import "TSSTInfoWindow.h"
 #import "TSSTThumbnailView.h"
+#import "SCExposeWindowController.h"
 #import "TSSTManagedSession.h"
 #import "DTPolishedProgressBar.h"
 #import "DTWindowCategory.h"
@@ -1093,22 +1094,64 @@ static void SCSetOrdinalForPage(id page, double v)
 
 - (IBAction)togglePageExpose:(id)sender
 {
-    if([exposeBezel isVisible])
+    SCExposeWindowController * expose = [SCExposeWindowController sharedController];
+    if([expose isShown])
     {
-        [[thumbnailPanel parentWindow] removeChildWindow: thumbnailPanel];
-        [thumbnailPanel orderOut: self];
-        [exposeBezel orderOut: self];
-		[[self window] makeKeyAndOrderFront: self];
-		[[self window] makeFirstResponder: pageView];
+        [expose hide];
+        [[self window] makeKeyAndOrderFront: self];
+        [[self window] makeFirstResponder: pageView];
     }
     else
     {
         [NSCursor unhide];
-        [(TSSTThumbnailView *)exposeView buildTrackingRects];
-        [exposeBezel setFrame: [[[self window] screen] frame] display: NO];
-        [exposeBezel makeKeyAndOrderFront: self];
-        [NSThread detachNewThreadSelector: @selector(processThumbs) toTarget: exposeView withObject: nil];
+        [expose showForParentWindow: [self window] delegate: (id)self];
     }
+}
+
+
+#pragma mark SCExposeViewDelegate
+
+- (NSInteger)pageCountForExposeView:(id)c
+{
+    return [[pageController arrangedObjects] count];
+}
+
+- (NSImage *)exposeView:(id)c thumbnailForPageAtIndex:(NSInteger)i
+{
+    NSArray * pages = [pageController arrangedObjects];
+    if(i < 0 || i >= (NSInteger)[pages count]) return nil;
+    return [self rotatedImageIfNeeded: [pages[i] valueForKey: @"thumbnail"] forPage: pages[i]];
+}
+
+- (NSImage *)exposeView:(id)c fullImageForPageAtIndex:(NSInteger)i
+{
+    NSArray * pages = [pageController arrangedObjects];
+    if(i < 0 || i >= (NSInteger)[pages count]) return nil;
+    return [self rotatedImageIfNeeded: [pages[i] valueForKey: @"pageImage"] forPage: pages[i]];
+}
+
+- (NSString *)exposeView:(id)c nameForPageAtIndex:(NSInteger)i
+{
+    NSArray * pages = [pageController arrangedObjects];
+    if(i < 0 || i >= (NSInteger)[pages count]) return nil;
+    return [pages[i] valueForKey: @"name"];
+}
+
+- (NSInteger)currentPageIndexForExposeView:(id)c
+{
+    return [pageController selectionIndex];
+}
+
+- (void)exposeView:(id)c didSelectPageAtIndex:(NSInteger)i
+{
+    [pageController setSelectionIndex: i];
+    [[self window] makeKeyAndOrderFront: self];
+    [[self window] makeFirstResponder: pageView];
+}
+
+- (void)exposeView:(id)c didMovePageFromIndex:(NSInteger)from toIndex:(NSInteger)to
+{
+    [self thumbnailView: nil didMovePageFromIndex: from toIndex: to];
 }
 
 
@@ -1846,11 +1889,9 @@ images are currently visible and then skips over them.
 
 - (void)killTopOptionalUIElement
 {
-	if([exposeBezel isVisible])
+	if([[SCExposeWindowController sharedController] isShown])
 	{
-		[exposeBezel removeChildWindow: thumbnailPanel];
-        [thumbnailPanel orderOut: self];
-		[exposeBezel orderOut: self];
+		[[SCExposeWindowController sharedController] hide];
 	}
     else if([[self window] isFullscreen])
     {
@@ -1871,9 +1912,7 @@ images are currently visible and then skips over them.
     }
     [session setValue: @NO forKey: @"loupe"];
     [self refreshLoupePanel];
-	[exposeBezel removeChildWindow: thumbnailPanel];
-	[thumbnailPanel orderOut: self];
-	[exposeBezel orderOut: self];
+	[[SCExposeWindowController sharedController] hide];
 }
 
 
