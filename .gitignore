@@ -23,3 +23,6 @@ Carthage/*
 
 # Auto-generated version (regenerated from git tag at build time)
 Config/Version.generated.xcconfig
+
+# Local code-signing Team ID (copy from DeveloperSettings.xcconfig.example)
+Config/DeveloperSettings.xcconfig

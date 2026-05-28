@@ -1,0 +1,11 @@
+// Template for local code-signing settings.
+//
+// Copy this file to "DeveloperSettings.xcconfig" (same folder) and set your
+// own Apple Developer Team ID. That copy is git-ignored, so your Team ID
+// never gets committed to the public repository.
+//
+//   cp Config/DeveloperSettings.xcconfig.example Config/DeveloperSettings.xcconfig
+//
+// Find your Team ID in Xcode > Settings > Accounts, or at
+// https://developer.apple.com/account (Membership details).
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
