@@ -186,6 +186,13 @@ CA
                                     <action selector="selectAll:" target="-1" id="1935"/>
                                 </connections>
                             </menuItem>
+                            <menuItem isSeparatorItem="YES" id="scDel0000"/>
+                            <menuItem title="Delete" id="scDel0001">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="delete:" target="-1" id="scDel0002"/>
+                                </connections>
+                            </menuItem>
                         </items>
                     </menu>
                 </menuItem>

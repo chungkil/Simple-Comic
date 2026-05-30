@@ -171,6 +171,35 @@ static const CGFloat SCExposePreviewMax = 720.0;
 @end
 
 
+#pragma mark - Collection view (keyDown forwarder)
+
+/*  NSCollectionView's own -keyDown: swallows keys it doesn't recognize
+    (Delete / Backspace / Return) and beeps instead of letting them
+    propagate.  This subclass forwards those keys to the window so the
+    panel's -keyDown: override can route them to the controller. */
+@interface SCExposeCollectionView : NSCollectionView
+@end
+
+@implementation SCExposeCollectionView
+- (void)keyDown:(NSEvent *)event
+{
+    NSString * chars = [event charactersIgnoringModifiers];
+    if([chars length] > 0)
+    {
+        unichar ch = [chars characterAtIndex: 0];
+        if(ch == NSDeleteCharacter || ch == NSBackspaceCharacter ||
+           ch == NSDeleteFunctionKey || ch == NSCarriageReturnCharacter ||
+           ch == NSNewlineCharacter || ch == NSEnterCharacter)
+        {
+            [[self window] keyDown: event];
+            return;
+        }
+    }
+    [super keyDown: event];
+}
+@end
+
+
 #pragma mark - Controller
 
 @interface SCExposeWindowController () <NSCollectionViewDataSource, NSCollectionViewDelegate, NSCollectionViewDelegateFlowLayout, SCExposeItemDelegate>
@@ -246,7 +275,7 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [layout setMinimumLineSpacing: SCExposeItemSpacing];
     [layout setSectionInset: NSEdgeInsetsMake(SCExposeSectionInset, SCExposeSectionInset, SCExposeSectionInset, SCExposeSectionInset)];
 
-    _collectionView = [[NSCollectionView alloc] initWithFrame: [content bounds]];
+    _collectionView = [[SCExposeCollectionView alloc] initWithFrame: [content bounds]];
     [_collectionView setCollectionViewLayout: layout];
     [_collectionView setDataSource: self];
     [_collectionView setDelegate: self];
@@ -417,6 +446,20 @@ static const CGFloat SCExposePreviewMax = 720.0;
         return YES;
     }
     return NO;
+}
+
+- (IBAction)delete:(id)sender
+{
+    [self deleteSelectedPages];
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem *)item
+{
+    if([item action] == @selector(delete:))
+    {
+        return _shown && [[_collectionView selectionIndexPaths] count] > 0;
+    }
+    return YES;
 }
 
 - (void)deleteSelectedPages
