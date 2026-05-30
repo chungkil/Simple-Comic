@@ -1154,6 +1154,119 @@ static void SCSetOrdinalForPage(id page, double v)
     [self thumbnailView: nil didMovePageFromIndex: from toIndex: to];
 }
 
+- (void)exposeView:(id)c didRequestDeletePagesAtIndexes:(NSIndexSet *)indexes
+{
+	if([indexes count] == 0) return;
+
+	NSArray * arranged = [[pageController arrangedObjects] copy];
+	NSMutableArray * targets = [NSMutableArray array];
+	NSMutableArray * skipped = [NSMutableArray array];
+
+	NSUInteger total = [arranged count];
+	[indexes enumerateIndexesUsingBlock: ^(NSUInteger idx, BOOL * stop)
+	{
+		if(idx >= total) return;
+		TSSTPage * page = arranged[idx];
+		if([self canDeletePage: page])
+		{
+			[targets addObject: page];
+		}
+		else
+		{
+			[skipped addObject: page];
+		}
+	}];
+	[arranged release];
+
+	if([targets count] == 0)
+	{
+		NSBeep();
+		return;
+	}
+
+	NSAlert * alert = [[[NSAlert alloc] init] autorelease];
+	if([targets count] == 1)
+	{
+		[alert setMessageText: @"이 페이지를 삭제할까요?"];
+	}
+	else
+	{
+		[alert setMessageText: [NSString stringWithFormat: @"%lu개 페이지를 삭제할까요?",
+			(unsigned long)[targets count]]];
+	}
+	NSString * info = @"세션 창을 닫을 때 원본 파일/아카이브에 반영하면 되돌릴 수 없습니다.";
+	if([skipped count] > 0)
+	{
+		info = [info stringByAppendingFormat:
+			@"\n(편집할 수 없는 페이지 %lu개는 건너뜁니다.)", (unsigned long)[skipped count]];
+	}
+	[alert setInformativeText: info];
+	[alert addButtonWithTitle: @"삭제"];
+	[alert addButtonWithTitle: @"취소"];
+	[[alert buttons][0] setKeyEquivalent: @"\r"];
+	[[alert buttons][1] setKeyEquivalent: @"\033"];
+	if([alert runModal] != NSAlertFirstButtonReturn) return;
+
+	for(TSSTPage * page in targets)
+	{
+		[self queueDeleteForPage: page];
+		[pageController removeObject: page];
+		[[self managedObjectContext] deleteObject: page];
+	}
+}
+
+- (BOOL)canDeletePage:(TSSTPage *)page
+{
+	if(!page) return NO;
+	if([[page valueForKey: @"text"] boolValue]) return NO;
+	TSSTManagedGroup * group = [page valueForKey: @"group"];
+	BOOL isTopLevelArchive = [group class] == [TSSTManagedArchive class] &&
+	                         group == [group topLevelGroup];
+	if(isTopLevelArchive)
+	{
+		NSString * ext = [[[group valueForKey: @"path"] pathExtension] lowercaseString];
+		return [ext isEqualToString: @"cbz"] || [ext isEqualToString: @"zip"];
+	}
+	if(group && ![group isKindOfClass: [TSSTManagedArchive class]])
+	{
+		NSString * imagePath = [page valueForKey: @"imagePath"];
+		return imagePath && [imagePath isAbsolutePath] &&
+		       [[NSFileManager defaultManager] fileExistsAtPath: imagePath];
+	}
+	return NO;
+}
+
+- (void)queueDeleteForPage:(TSSTPage *)selectedPage
+{
+	TSSTManagedGroup * group = [selectedPage valueForKey: @"group"];
+	NSString * imagePath = [selectedPage valueForKey: @"imagePath"];
+
+	if([group isKindOfClass: [TSSTManagedArchive class]])
+	{
+		NSString * archivePath = [group valueForKey: @"path"];
+		if(archivePath && imagePath)
+		{
+			NSMutableArray * entries = pendingArchiveDeletes[archivePath];
+			if(!entries)
+			{
+				entries = [NSMutableArray array];
+				pendingArchiveDeletes[archivePath] = entries;
+			}
+			[entries addObject: imagePath];
+		}
+		[pendingArchiveRotations[archivePath] removeObjectForKey: imagePath];
+		[(NSMutableArray *)pendingArchiveReorders[archivePath] removeObject: imagePath];
+	}
+	else if(imagePath && [imagePath isAbsolutePath])
+	{
+		[pendingFolderDeletes addObject: imagePath];
+		[pendingFolderRotations removeObjectForKey: imagePath];
+		NSString * folderKey = [[selectedPage valueForKeyPath: @"group.path"] copy];
+		[(NSMutableArray *)pendingFolderReorders[folderKey] removeObject: imagePath];
+		[folderKey release];
+	}
+}
+
 
 - (IBAction)launchJumpPanel:(id)sender
 {

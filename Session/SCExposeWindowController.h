@@ -20,6 +20,10 @@
 - (NSInteger)currentPageIndexForExposeView:(SCExposeWindowController *)c;
 - (void)exposeView:(SCExposeWindowController *)c didSelectPageAtIndex:(NSInteger)i;
 - (void)exposeView:(SCExposeWindowController *)c didMovePageFromIndex:(NSInteger)from toIndex:(NSInteger)to;
+@optional
+/* Queue the pages at the given indexes for deletion.  The delegate
+   removes them from its page list; the Expose view reloads after. */
+- (void)exposeView:(SCExposeWindowController *)c didRequestDeletePagesAtIndexes:(NSIndexSet *)indexes;
 @end
 
 

@@ -148,20 +148,33 @@ static const CGFloat SCExposePreviewMax = 720.0;
 @end
 
 
-#pragma mark - Window (Esc to dismiss)
+#pragma mark - Window (Esc to dismiss, Delete to remove selection)
+
+@class SCExposeWindowController;
 
 @interface SCExposePanel : NSPanel
+@property (assign, nonatomic) SCExposeWindowController * exposeController;
 @end
 
 @implementation SCExposePanel
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return NO; }
+- (void)keyDown:(NSEvent *)event
+{
+    /* Forward keystrokes that the Expose window cares about (Delete /
+       Backspace / Return) to the controller.  Everything else falls
+       through so Esc still works via cancelOperation: and the system
+       beep fires on unhandled keys. */
+    if([(id)self.exposeController handleKeyDown: event]) return;
+    [super keyDown: event];
+}
 @end
 
 
 #pragma mark - Controller
 
 @interface SCExposeWindowController () <NSCollectionViewDataSource, NSCollectionViewDelegate, NSCollectionViewDelegateFlowLayout, SCExposeItemDelegate>
+- (BOOL)handleKeyDown:(NSEvent *)event;
 @end
 
 
@@ -205,6 +218,7 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [panel release];
     if(self)
     {
+        [(SCExposePanel *)panel setExposeController: self];
         _previewIndex = -1;
         [self setupContent];
     }
@@ -237,7 +251,9 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [_collectionView setDataSource: self];
     [_collectionView setDelegate: self];
     [_collectionView setSelectable: YES];
-    [_collectionView setAllowsMultipleSelection: NO];
+    /* Cmd / Shift click extends the selection; Delete removes all
+       selected pages.  Plain click still jumps to a single page. */
+    [_collectionView setAllowsMultipleSelection: YES];
     [_collectionView setBackgroundColors: @[[NSColor clearColor]]];
     [_collectionView registerForDraggedTypes: @[SCExposePasteboardType]];
     [_collectionView setDraggingSourceOperationMask: NSDragOperationMove forLocal: YES];
@@ -359,6 +375,14 @@ static const CGFloat SCExposePreviewMax = 720.0;
 {
     NSIndexPath * ip = [indexPaths anyObject];
     if(!ip) return;
+
+    /* If the user is extending a multi-selection with Cmd / Shift,
+       just keep the selection — don't dismiss and jump.  A plain
+       click (no modifiers) still acts as "open this page". */
+    NSEventModifierFlags mods = [NSEvent modifierFlags] &
+        (NSEventModifierFlagCommand | NSEventModifierFlagShift);
+    if(mods != 0) return;
+
     NSInteger i = [ip item];
     [self cancelHoverPreview];
     [_previewPanel orderOut: nil];
@@ -366,6 +390,59 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [self hide];
     [d exposeView: self didSelectPageAtIndex: i];
     [d release];
+}
+
+- (BOOL)handleKeyDown:(NSEvent *)event
+{
+    NSString * chars = [event charactersIgnoringModifiers];
+    if([chars length] == 0) return NO;
+    unichar ch = [chars characterAtIndex: 0];
+
+    if(ch == NSDeleteCharacter || ch == NSBackspaceCharacter || ch == NSDeleteFunctionKey)
+    {
+        [self deleteSelectedPages];
+        return YES;
+    }
+    if(ch == NSCarriageReturnCharacter || ch == NSNewlineCharacter || ch == NSEnterCharacter)
+    {
+        /* Enter on a multi-selection: jump to the first selected page. */
+        NSSet<NSIndexPath *> * sel = [_collectionView selectionIndexPaths];
+        NSIndexPath * first = nil;
+        for(NSIndexPath * ip in sel)
+        {
+            if(!first || [ip item] < [first item]) first = ip;
+        }
+        if(!first) return NO;
+        [self collectionView: _collectionView didSelectItemsAtIndexPaths: [NSSet setWithObject: first]];
+        return YES;
+    }
+    return NO;
+}
+
+- (void)deleteSelectedPages
+{
+    NSSet<NSIndexPath *> * sel = [_collectionView selectionIndexPaths];
+    if([sel count] == 0)
+    {
+        NSBeep();
+        return;
+    }
+    if(![_externalDelegate respondsToSelector: @selector(exposeView:didRequestDeletePagesAtIndexes:)])
+    {
+        NSBeep();
+        return;
+    }
+
+    NSMutableIndexSet * indexes = [NSMutableIndexSet indexSet];
+    for(NSIndexPath * ip in sel) [indexes addIndex: (NSUInteger)[ip item]];
+
+    [self cancelHoverPreview];
+    [_previewPanel orderOut: nil];
+    _previewIndex = -1;
+
+    [_externalDelegate exposeView: self didRequestDeletePagesAtIndexes: indexes];
+    [_collectionView deselectAll: nil];
+    [_collectionView reloadData];
 }
 
 #pragma mark Drag & drop reorder
