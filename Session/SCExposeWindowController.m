@@ -410,7 +410,15 @@ static const CGFloat SCExposePreviewMax = 720.0;
        click (no modifiers) still acts as "open this page". */
     NSEventModifierFlags mods = [NSEvent modifierFlags] &
         (NSEventModifierFlagCommand | NSEventModifierFlagShift);
-    if(mods != 0) return;
+    if(mods != 0)
+    {
+        /* Modifier-click is a multi-selection gesture — dismiss any hover
+           preview already on screen so it doesn't cover the grid. */
+        [self cancelHoverPreview];
+        [_previewPanel orderOut: nil];
+        _previewIndex = -1;
+        return;
+    }
 
     NSInteger i = [ip item];
     [self cancelHoverPreview];
@@ -541,6 +549,14 @@ static const CGFloat SCExposePreviewMax = 720.0;
         if(_pendingItem == item) return;
         _pendingItem = item;
         [self cancelHoverPreview];
+        /* While extending a multi-selection (Cmd/Shift held), don't pop the
+           large hover preview — it covers the grid and fights the selection. */
+        if([NSEvent modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagShift))
+        {
+            [_previewPanel orderOut: nil];
+            _previewIndex = -1;
+            return;
+        }
         _previewDelayTimer = [[NSTimer scheduledTimerWithTimeInterval: SCExposeHoverDelay
                                                                target: self
                                                              selector: @selector(showHoverPreview:)
@@ -570,6 +586,9 @@ static const CGFloat SCExposePreviewMax = 720.0;
 {
     [_previewDelayTimer release];
     _previewDelayTimer = nil;
+    /* A modifier was pressed after the timer was scheduled — the user is
+       extending a selection, so suppress the preview. */
+    if([NSEvent modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) return;
     SCExposeItem * item = _pendingItem;
     if(!item || ![self isShown]) return;
 
