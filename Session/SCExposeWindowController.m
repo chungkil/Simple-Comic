@@ -218,6 +218,10 @@ static const CGFloat SCExposePreviewMax = 720.0;
     SCExposeItem * _pendingItem;
     id <SCExposeViewDelegate> _externalDelegate;
     BOOL _shown;
+    /* Guards against re-entrancy while we push the marked set into the
+       collection view's selection (so the delegate notification that we
+       send out doesn't bounce back in as a user selection change). */
+    BOOL _syncingSelection;
 }
 
 + (instancetype)sharedController
@@ -347,7 +351,7 @@ static const CGFloat SCExposePreviewMax = 720.0;
     NSScreen * screen = [parent screen] ?: [NSScreen mainScreen];
     NSRect frame = [screen frame];
     [[self window] setFrame: frame display: NO];
-    [_collectionView reloadData];
+    [self reloadData];
     _shown = YES;
     [[self window] makeKeyAndOrderFront: self];
 
@@ -371,6 +375,43 @@ static const CGFloat SCExposePreviewMax = 720.0;
 - (void)reloadData
 {
     [_collectionView reloadData];
+    [self restoreMarkedSelection];
+}
+
+/* Pull the delegate's marked-page set into the collection view's selection so
+   marks made in the paged view (or a previous Exposé visit) show up here. */
+- (void)restoreMarkedSelection
+{
+    /* Always set the selection (empty when there are no marks) so a stale
+       selection from a previous work — this controller is a singleton — never
+       leaks into the current one. */
+    NSMutableSet<NSIndexPath *> * paths = [NSMutableSet set];
+    if([_externalDelegate respondsToSelector: @selector(markedPageIndexesForExposeView:)])
+    {
+        NSIndexSet * marks = [_externalDelegate markedPageIndexesForExposeView: self];
+        [marks enumerateIndexesUsingBlock: ^(NSUInteger i, BOOL * stop)
+        {
+            [paths addObject: [NSIndexPath indexPathForItem: i inSection: 0]];
+        }];
+    }
+    _syncingSelection = YES;
+    [_collectionView setSelectionIndexPaths: paths];
+    _syncingSelection = NO;
+}
+
+/* Push the current grid selection back out to the delegate's shared set. */
+- (void)pushMarkedSelection
+{
+    if(![_externalDelegate respondsToSelector: @selector(exposeView:didChangeMarkedSelection:)])
+    {
+        return;
+    }
+    NSMutableIndexSet * set = [NSMutableIndexSet indexSet];
+    for(NSIndexPath * ip in [_collectionView selectionIndexPaths])
+    {
+        [set addIndex: (NSUInteger)[ip item]];
+    }
+    [_externalDelegate exposeView: self didChangeMarkedSelection: set];
 }
 
 - (void)cancelOperation:(id)sender
@@ -395,6 +436,9 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [item setPageIndex: i];
     [item setItemDelegate: self];
     [item setIsCurrent: (i == [_externalDelegate currentPageIndexForExposeView: self])];
+    /* Reflect the marked set for items that scroll into view after the
+       selection was restored. */
+    [item setSelected: [[cv selectionIndexPaths] containsObject: indexPath]];
     return item;
 }
 
@@ -404,6 +448,8 @@ static const CGFloat SCExposePreviewMax = 720.0;
 {
     NSIndexPath * ip = [indexPaths anyObject];
     if(!ip) return;
+    /* Programmatic selection restore — not a user action. */
+    if(_syncingSelection) return;
 
     /* If the user is extending a multi-selection with Cmd / Shift,
        just keep the selection — don't dismiss and jump.  A plain
@@ -413,10 +459,12 @@ static const CGFloat SCExposePreviewMax = 720.0;
     if(mods != 0)
     {
         /* Modifier-click is a multi-selection gesture — dismiss any hover
-           preview already on screen so it doesn't cover the grid. */
+           preview already on screen so it doesn't cover the grid, and sync
+           the new selection into the shared marked set. */
         [self cancelHoverPreview];
         [_previewPanel orderOut: nil];
         _previewIndex = -1;
+        [self pushMarkedSelection];
         return;
     }
 
@@ -427,6 +475,20 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [self hide];
     [d exposeView: self didSelectPageAtIndex: i];
     [d release];
+}
+
+- (void)collectionView:(NSCollectionView *)cv didDeselectItemsAtIndexPaths:(NSSet<NSIndexPath *> *)indexPaths
+{
+    if(_syncingSelection) return;
+    /* Only mirror deselection that is part of a modifier-driven multi-select
+       edit.  A plain click replaces the selection on its way to a jump and
+       must leave the marked set untouched. */
+    NSEventModifierFlags mods = [NSEvent modifierFlags] &
+        (NSEventModifierFlagCommand | NSEventModifierFlagShift);
+    if(mods != 0)
+    {
+        [self pushMarkedSelection];
+    }
 }
 
 - (BOOL)handleKeyDown:(NSEvent *)event
@@ -492,8 +554,9 @@ static const CGFloat SCExposePreviewMax = 720.0;
     _previewIndex = -1;
 
     [_externalDelegate exposeView: self didRequestDeletePagesAtIndexes: indexes];
-    [_collectionView deselectAll: nil];
-    [_collectionView reloadData];
+    /* The delegate dropped the deleted pages from the shared marked set;
+       reload and re-show whatever marks remain (e.g. skipped non-CBZ pages). */
+    [self reloadData];
 }
 
 #pragma mark Drag & drop reorder
@@ -536,7 +599,8 @@ static const CGFloat SCExposePreviewMax = 720.0;
     if(from < to) to -= 1;
     if(from == to) return NO;
     [_externalDelegate exposeView: self didMovePageFromIndex: from toIndex: to];
-    [_collectionView reloadData];
+    /* Re-map the marked selection onto the new page order. */
+    [self reloadData];
     return YES;
 }
 

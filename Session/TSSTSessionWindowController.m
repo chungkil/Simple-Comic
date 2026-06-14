@@ -130,6 +130,7 @@ static void SCSetOrdinalForPage(id page, double v)
 		pendingArchiveRotations = [[NSMutableDictionary alloc] init];
 		pendingFolderReorders = [[NSMutableDictionary alloc] init];
 		pendingArchiveReorders = [[NSMutableDictionary alloc] init];
+		markedPages = [[NSMutableSet alloc] init];
         session = [aSession retain];
         BOOL cascade = [session valueForKey: @"position"] ? NO : YES;
         [self setShouldCascadeWindows: cascade];
@@ -260,6 +261,7 @@ static void SCSetOrdinalForPage(id page, double v)
 	[pendingArchiveRotations release];
 	[pendingFolderReorders release];
 	[pendingArchiveReorders release];
+	[markedPages release];
     [session release];
     [super dealloc];
 }
@@ -1109,6 +1111,50 @@ static void SCSetOrdinalForPage(id page, double v)
 }
 
 
+#pragma mark -
+#pragma mark Marked pages (multi-select for deletion)
+
+/* Toggles the current page's membership in the marked set.  Bound to the
+   's' key in the paged view; the same set drives the Exposé selection. */
+- (void)toggleMarkForCurrentPage
+{
+	NSArray * arranged = [pageController arrangedObjects];
+	NSInteger idx = [pageController selectionIndex];
+	if(idx < 0 || idx >= (NSInteger)[arranged count])
+	{
+		NSBeep();
+		return;
+	}
+	TSSTPage * page = arranged[idx];
+	if([markedPages containsObject: page])
+	{
+		[markedPages removeObject: page];
+	}
+	else
+	{
+		[markedPages addObject: page];
+	}
+	[pageView setNeedsDisplay: YES];
+	if([[SCExposeWindowController sharedController] isShown])
+	{
+		[[SCExposeWindowController sharedController] reloadData];
+	}
+}
+
+- (BOOL)currentPageIsMarked
+{
+	NSArray * arranged = [pageController arrangedObjects];
+	NSInteger idx = [pageController selectionIndex];
+	if(idx < 0 || idx >= (NSInteger)[arranged count]) return NO;
+	return [markedPages containsObject: arranged[idx]];
+}
+
+- (NSUInteger)markedPageCount
+{
+	return [markedPages count];
+}
+
+
 #pragma mark SCExposeViewDelegate
 
 - (NSInteger)pageCountForExposeView:(id)c
@@ -1140,6 +1186,33 @@ static void SCSetOrdinalForPage(id page, double v)
 - (NSInteger)currentPageIndexForExposeView:(id)c
 {
     return [pageController selectionIndex];
+}
+
+/* The Exposé reads this on open/reload to pre-select pages the user has
+   already marked (via 's' in the paged view or earlier in the grid). */
+- (NSIndexSet *)markedPageIndexesForExposeView:(id)c
+{
+    NSArray * arranged = [pageController arrangedObjects];
+    NSMutableIndexSet * set = [NSMutableIndexSet indexSet];
+    for(TSSTPage * page in markedPages)
+    {
+        NSUInteger i = [arranged indexOfObjectIdenticalTo: page];
+        if(i != NSNotFound) [set addIndex: i];
+    }
+    return set;
+}
+
+/* The Exposé calls this when the user changes the grid selection with a
+   modifier, so the shared set stays in sync. */
+- (void)exposeView:(id)c didChangeMarkedSelection:(NSIndexSet *)indexes
+{
+    NSArray * arranged = [pageController arrangedObjects];
+    NSUInteger total = [arranged count];
+    [markedPages removeAllObjects];
+    [indexes enumerateIndexesUsingBlock: ^(NSUInteger idx, BOOL * stop)
+    {
+        if(idx < total) [markedPages addObject: arranged[idx]];
+    }];
 }
 
 - (void)exposeView:(id)c didSelectPageAtIndex:(NSInteger)i
@@ -1210,6 +1283,7 @@ static void SCSetOrdinalForPage(id page, double v)
 	for(TSSTPage * page in targets)
 	{
 		[self queueDeleteForPage: page];
+		[markedPages removeObject: page];
 		[pageController removeObject: page];
 		[[self managedObjectContext] deleteObject: page];
 	}
@@ -1456,6 +1530,7 @@ static void SCSetOrdinalForPage(id page, double v)
 		[folderKey release];
 	}
 
+	[markedPages removeObject: selectedPage];
 	[pageController removeObject: selectedPage];
 	[[self managedObjectContext] deleteObject: selectedPage];
 }

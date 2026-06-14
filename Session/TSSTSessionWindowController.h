@@ -151,6 +151,13 @@ enum PageSelectionMode {
 	     paths in the new order.  Commit renames the files in place. */
 	NSMutableDictionary * pendingFolderReorders;
 	NSMutableDictionary * pendingArchiveReorders;
+
+	/* Pages the user has marked (multi-select) for deletion.  Shared between
+	   the paged view ('s' toggles the current page) and the thumbnail Exposé,
+	   so a selection made in one mode stays valid in the other.  Holds the
+	   TSSTPage objects themselves (not indexes) so it survives reordering and
+	   page-set changes. */
+	NSMutableSet * markedPages;
 }
 
 @property (retain) NSArray * pageSortDescriptor;
@@ -221,6 +228,11 @@ enum PageSelectionMode {
 - (void)deletePageWithSelection:(NSInteger)selection;
 - (void)extractPageWithSelection:(NSInteger)selection;
 - (void)changeViewForSelection;
+
+/* Marked-page (multi-select) support, shared paged-view <-> Exposé. */
+- (void)toggleMarkForCurrentPage;
+- (BOOL)currentPageIsMarked;
+- (NSUInteger)markedPageCount;
 
 - (void)commitPendingDeletions;
 - (void)discardPendingDeletions;

@@ -361,6 +361,37 @@
         [[NSColor keyboardFocusIndicatorColor] set];
         [NSBezierPath strokeRect: [[self enclosingScrollView] documentVisibleRect]];
     }
+
+	/*	Marked-page (multi-select) indicator.  Drawn in unrotated view
+		coordinates and pinned to the visible area so it stays on screen while
+		scrolled or in fullscreen.  "✓" prefix means the current page itself is
+		marked; the number is how many pages are marked in this work. */
+	NSUInteger markCount = [sessionController markedPageCount];
+	if(markCount > 0 && ![sessionController pageSelectionInProgress])
+	{
+		BOOL currentMarked = [sessionController currentPageIsMarked];
+		NSString * badge = currentMarked
+			? [NSString stringWithFormat: @"✓ 선택 %lu", (unsigned long)markCount]
+			: [NSString stringWithFormat: @"선택 %lu", (unsigned long)markCount];
+		NSDictionary * attrs = @{
+			NSFontAttributeName: [NSFont boldSystemFontOfSize: 13],
+			NSForegroundColorAttributeName: [NSColor whiteColor]
+		};
+		NSColor * fill = currentMarked
+			? [NSColor colorWithCalibratedRed: 0.16 green: 0.50 blue: 0.95 alpha: 0.92]
+			: [NSColor colorWithCalibratedWhite: 0.0 alpha: 0.65];
+		NSSize textSize = [badge sizeWithAttributes: attrs];
+		CGFloat padX = 10, padY = 5, margin = 12;
+		NSRect visible = [[self enclosingScrollView] documentVisibleRect];
+		NSRect badgeRect = NSMakeRect(NSMinX(visible) + margin,
+		                              NSMaxY(visible) - margin - (textSize.height + padY * 2),
+		                              textSize.width + padX * 2,
+		                              textSize.height + padY * 2);
+		[fill set];
+		[[NSBezierPath bezierPathWithRoundedRect: badgeRect xRadius: 8 yRadius: 8] fill];
+		[badge drawAtPoint: NSMakePoint(NSMinX(badgeRect) + padX, NSMinY(badgeRect) + padY)
+		    withAttributes: attrs];
+	}
 }
 
 
@@ -807,7 +838,19 @@
 		[self setNeedsDisplay: YES];
 		return;
 	}
-	
+
+	/*	's' toggles the current page's mark.  Match the physical key
+		(kVK_ANSI_S == 1) as well as the character, so it works even when a
+		non-Latin input source (e.g. Hangul) is active — otherwise the 's' key
+		arrives as a Korean jamo and a plain character comparison misses. */
+	NSString * imChars = [event charactersIgnoringModifiers];
+	unichar imChar = [imChars length] > 0 ? [imChars characterAtIndex: 0] : 0;
+	if([event keyCode] == 1 || imChar == 's' || imChar == 'S')
+	{
+		[sessionController toggleMarkForCurrentPage];
+		return;
+	}
+
     NSEventModifierFlags modifier = [event modifierFlags];
     BOOL shiftKey = modifier & NSShiftKeyMask ? YES : NO;
     NSNumber * charNumber = @([[event charactersIgnoringModifiers] characterAtIndex: 0]);

@@ -24,6 +24,13 @@
 /* Queue the pages at the given indexes for deletion.  The delegate
    removes them from its page list; the Expose view reloads after. */
 - (void)exposeView:(SCExposeWindowController *)c didRequestDeletePagesAtIndexes:(NSIndexSet *)indexes;
+/* Indexes of pages the user has already marked (e.g. with 's' in the paged
+   view).  The Exposé pre-selects these on open and after every reload, so a
+   selection survives switching between thumbnail and single-view modes. */
+- (NSIndexSet *)markedPageIndexesForExposeView:(SCExposeWindowController *)c;
+/* Sent when the user changes the grid selection with a modifier (Cmd/Shift)
+   so the delegate's shared marked set stays in sync. */
+- (void)exposeView:(SCExposeWindowController *)c didChangeMarkedSelection:(NSIndexSet *)indexes;
 @end
 
 
