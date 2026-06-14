@@ -2,6 +2,20 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.0] - 2026-06-14
+
+### Added
+- **Marked-page multi-select shared between the paged view and the Thumbnail Exposé** (`e21bc2f`) — a selection made in one mode stays valid in the other:
+  - `s` in the paged view toggles the current page's mark. Matched by physical key code (kVK_ANSI_S) so it works while a Hangul (or other non-Latin) input source is active.
+  - The paged view shows a `✓ 선택 N` badge while pages are marked, pinned to the visible area (works in fullscreen).
+  - The Exposé pre-selects the marked pages on open / reload and writes Cmd/Shift-click changes back.
+  - Delete (Exposé Delete/Backspace or Edit ▸ Delete) removes the marked pages via the existing deferred-delete path; deleted pages leave the set, skipped non-CBZ pages stay marked.
+
+## [1.8.1] - 2026-06-07
+
+### Fixed
+- Thumbnail Exposé: Cmd/Shift-click to extend the multi-selection no longer pops the large hover preview over the grid (it looked like the click went into a "zoom" mode). The preview is suppressed while a selection modifier is held (`04d6297`).
+
 ## [1.8.0] - 2026-05-24
 
 ### Added
