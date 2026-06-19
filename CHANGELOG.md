@@ -2,6 +2,11 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.1] - 2026-06-19
+
+### Fixed
+- **⌘Q would not quit the app** when session restore was off and a window had pending "save on close" page edits (rotate/reorder/delete). Termination force-closes each window, which raised a blocking save-changes modal and stalled the quit (`4bad3d2`). The edits are now dropped on quit so the app terminates immediately; the save prompt is unchanged when you close a window manually (⌘W).
+
 ## [1.9.0] - 2026-06-14
 
 ### Added
