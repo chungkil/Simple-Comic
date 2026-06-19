@@ -493,9 +493,13 @@ static NSArray * allAvailableStringEncodings(void)
 	
 	if(![[userDefaults valueForKey: TSSTSessionRestore] boolValue])
 	{
-		/* Goes through and deletes all active sessions if the user has auto save turned off */
+		/* Goes through and deletes all active sessions if the user has auto save turned off.
+		   Discard any pending "save on close" archive edits first: otherwise -performClose:
+		   triggers -windowShouldClose:, which puts up a blocking save-changes modal and stalls
+		   termination, so Cmd+Q appears to do nothing.  On quit we just drop the edits and go. */
 		for(TSSTSessionWindowController * sessionWindow in sessions)
 		{
+			[sessionWindow discardPendingDeletions];
 			[[sessionWindow window] performClose: self];
 		}
 	}
