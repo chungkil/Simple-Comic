@@ -943,9 +943,16 @@
         NSMutableDictionary * userInfo = [NSMutableDictionary dictionaryWithObjectsAndKeys: 
             [NSDate date], @"lastTime", @(shiftKey), @"accelerate",
             nil, @"leftTurnStart", nil, @"rightTurnStart", nil];
-        scrollTimer = [NSTimer scheduledTimerWithTimeInterval: 1/10
-                                                       target: self 
-                                                     selector: @selector(scroll:) 
+        /* 0.1s (10 fps).  NOTE: must be a float literal — "1/10" is integer
+           division (== 0), and NSTimer clamps a <=0 interval to 0.1 ms, giving
+           a ~10 kHz runaway timer that saturates the main thread while an arrow
+           key is held.  That starves the event queue: the arrow's keyUp never
+           arrives (so scrollKeys stays set and the timer never stops) and ⌘-key
+           equivalents (⌘C, ⌘Q, …) stop firing until the app is deactivated and
+           reactivated, which flushes the queue. */
+        scrollTimer = [NSTimer scheduledTimerWithTimeInterval: 0.1
+                                                       target: self
+                                                     selector: @selector(scroll:)
                                                      userInfo: userInfo
                                                       repeats: YES];
         [scrollTimer retain];
