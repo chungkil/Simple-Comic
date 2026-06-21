@@ -2,6 +2,11 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.2] - 2026-06-22
+
+### Fixed
+- **⌘-key shortcuts (⌘C Capture Page, ⌘Q Quit, …) stopped working after navigating with the arrow keys**, until you switched away from the app and back (`10147b4`). The smooth-scroll timer interval was written as `1/10` — integer division, so `0` — which NSTimer clamps to a ~0.1 ms (~10 kHz) runaway timer. Holding an arrow key saturated the main thread and starved the event queue, so the arrow's keyUp and subsequent ⌘-key equivalents were never delivered. Fixed to the intended 0.1 s interval.
+
 ## [1.9.1] - 2026-06-19
 
 ### Fixed
