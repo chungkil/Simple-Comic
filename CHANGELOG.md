@@ -2,10 +2,15 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.3] - 2026-06-25
+
+### Fixed
+- **⌘-letter shortcuts (⌘C Capture Page, ⌘Q Quit, …) did nothing while a non-Latin input source (e.g. 2-Set Korean / 한글) was active** (`3330cce`). The menu shortcuts are plain Latin key equivalents, but under Hangul `-charactersIgnoringModifiers` returns the composed jamo (e.g. "ㅊ" for the C key), so AppKit never matched the Latin equivalent and the shortcut fell through silently. Arrow/space keys and mouse-driven menu commands were unaffected. ⌘-key events are now re-matched against the menu using the key's Latin character (resolved from the current ASCII-capable keyboard layout), so the shortcuts work regardless of the active input source.
+
 ## [1.9.2] - 2026-06-22
 
 ### Fixed
-- **⌘-key shortcuts (⌘C Capture Page, ⌘Q Quit, …) stopped working after navigating with the arrow keys**, until you switched away from the app and back (`10147b4`). The smooth-scroll timer interval was written as `1/10` — integer division, so `0` — which NSTimer clamps to a ~0.1 ms (~10 kHz) runaway timer. Holding an arrow key saturated the main thread and starved the event queue, so the arrow's keyUp and subsequent ⌘-key equivalents were never delivered. Fixed to the intended 0.1 s interval.
+- Holding an arrow key while a page is zoomed in / larger than the window no longer spins a runaway timer that pegs the CPU (`10147b4`). The smooth-scroll timer interval was written as `1/10` — integer division, so `0` — which NSTimer clamps to ~0.1 ms (~10 kHz). Fixed to the intended 0.1 s (10 fps) interval. *(This was first thought to also explain the dead ⌘-shortcuts; the real cause of that was the input-source bug fixed in 1.9.3.)*
 
 ## [1.9.1] - 2026-06-19
 
