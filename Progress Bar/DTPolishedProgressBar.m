@@ -115,13 +115,17 @@ cornerRadius, emptyGradient, barGradient, shadowGradient, highlightColor, number
 
 	[emptyGradient drawInRect: fillRect angle: 270];
 
-    if(leftToRight)
+    /*  maxValue is the last page's index, so a one-page work makes it 0 and
+        deleting pages can drive it there (or negative) mid-session.  The
+        division then yields NaN/inf, roundedRectWithCornerRadius() feeds that
+        to NSBezierPath, and the exception it raises inside -drawRect: is
+        turned into a crash by AppKit.  A single page simply fills the bar. */
+    CGFloat fillWidth = maxValue > 0
+        ? NSWidth(progressRect) * (currentValue + 1) / maxValue
+        : NSWidth(progressRect);
+    fillRect.size.width = fillWidth + 2 * self.cornerRadius;
+    if(!leftToRight)
     {
-        fillRect.size.width = NSWidth(progressRect) * (currentValue + 1) / maxValue + 2 * self.cornerRadius;
-    }
-    else
-    {
-		fillRect.size.width = NSWidth(progressRect) * (currentValue + 1) / maxValue + 2 * self.cornerRadius;
 		fillRect.origin.x = NSMinX(barRect) + (NSWidth(barRect) - NSWidth(fillRect) - 1);
     }
 	
