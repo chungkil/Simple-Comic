@@ -2,6 +2,11 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.10.3] - 2026-08-18
+
+### Fixed
+- **"반영" (apply changes on close) hung forever on archives with many deleted pages** (`30ad6d0`). The `zip`/`unzip` helper tasks were given `NSPipe`s for stdout/stderr that nothing ever read. `zip -d` prints a line per entry, so a few hundred deletions overrun the 64 KB pipe buffer; the child then blocks in `write()` and `-waitUntilExit` on the main thread never returns — the app just sits there. Observed on a 1182-entry delete that stalled for over six minutes (`zip` in `__write_nocancel`, main thread in `commitPendingDeletions` → `waitUntilExit`). All five task sites (delete, rotate, reorder, CBZ conversion) now discard child output through `fileHandleWithNullDevice`; only the exit status was ever used.
+
 ## [1.10.2] - 2026-08-18
 
 ### Fixed
