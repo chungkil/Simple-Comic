@@ -2,6 +2,11 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.10.1] - 2026-08-17
+
+### Fixed
+- **Deleting pages still crashed in 1.10.0** (`43ac23e`). The 1.10.0 fix copied `arrangedObjects` before bounds-checking it, but `arrangedObjects` is an `_NSControllerArrayProxy` over the array controller's live mutable array and `-copy` walks it index by index — a delete shrinking it mid-walk threw before the bounds check ever ran (`index 621 beyond bounds [0 .. 620]`, inside `-[__NSPlaceholderArray initWithArray:copyItems:]`). The real problem is reading an `NSArrayController` off the main thread at all, so the controller access now hops to the main queue (`-pageAtIndexFromAnyThread:`, `-livePageCount`) — a direct call when already on main — while the expensive thumbnail decoding stays on the background thread.
+
 ## [1.10.0] - 2026-08-17
 
 ### Added
