@@ -158,6 +158,14 @@ enum PageSelectionMode {
 	   TSSTPage objects themselves (not indexes) so it survives reordering and
 	   page-set changes. */
 	NSMutableSet * markedPages;
+
+	/* Sheet shown while a long page operation runs (bulk delete, and applying
+	   pending edits to the archive on close).  Built in code, no nib. */
+	NSWindow * progressSheet;
+	NSProgressIndicator * progressSheetBar;
+	NSTextField * progressSheetTitle;
+	NSTextField * progressSheetDetail;
+	NSDate * progressSheetLastPaint;
 }
 
 @property (retain) NSArray * pageSortDescriptor;
@@ -234,6 +242,11 @@ enum PageSelectionMode {
 - (BOOL)currentPageIsMarked;
 - (NSUInteger)markedPageCount;
 - (IBAction)invertPageSelection:(id)sender;
+
+/* Progress sheet for long page operations (see the ivars above). */
+- (void)beginProgressSheetWithTitle:(NSString *)title;
+- (void)updateProgressSheetDetail:(NSString *)detail fraction:(double)fraction;
+- (void)endProgressSheet;
 
 - (void)commitPendingDeletions;
 - (void)discardPendingDeletions;

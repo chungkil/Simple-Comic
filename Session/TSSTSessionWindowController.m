@@ -228,6 +228,11 @@ static void SCSetOrdinalForPage(id page, double v)
 
 - (void)dealloc
 {
+	[progressSheetTitle release];
+	[progressSheetDetail release];
+	[progressSheetBar release];
+	[progressSheet release];
+	[progressSheetLastPaint release];
 	[(TSSTThumbnailView *)exposeView setDataSource: nil];
     NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
 	
@@ -1334,12 +1339,35 @@ static void SCSetOrdinalForPage(id page, double v)
 	[[alert buttons][1] setKeyEquivalent: @"\033"];
 	if([alert runModal] != NSAlertFirstButtonReturn) return;
 
-	for(TSSTPage * page in targets)
+	/*  Each -removeObject: fires the arrangedObjects KVO (thumbnail rebuild,
+	    ordinal rebase, view refresh), so a few hundred pages take real time.
+	    Show a sheet for anything big enough to be noticeable. */
+	NSUInteger deleteTotal = [targets count];
+	BOOL sheeted = (deleteTotal > 20);
+	if(sheeted) [self beginProgressSheetWithTitle: @"페이지를 삭제하는 중…"];
+
+	@try
 	{
-		[self queueDeleteForPage: page];
-		[markedPages removeObject: page];
-		[pageController removeObject: page];
-		[[self managedObjectContext] deleteObject: page];
+		NSUInteger done = 0;
+		for(TSSTPage * page in targets)
+		{
+			[self queueDeleteForPage: page];
+			[markedPages removeObject: page];
+			[pageController removeObject: page];
+			[[self managedObjectContext] deleteObject: page];
+			++done;
+			if(sheeted)
+			{
+				[self updateProgressSheetDetail:
+					[NSString stringWithFormat: @"%lu / %lu 페이지",
+						(unsigned long)done, (unsigned long)deleteTotal]
+								   fraction: (double)done / (double)deleteTotal];
+			}
+		}
+	}
+	@finally
+	{
+		if(sheeted) [self endProgressSheet];
 	}
 }
 
@@ -2415,6 +2443,195 @@ images are currently visible and then skips over them.
 }
 
 
+#pragma mark - Progress sheet
+
+/*  Bulk deletes and the apply-on-close repack can run for minutes on a big
+    archive, and both used to freeze the window with no feedback.  The work
+    stays on the main thread (Core Data and the array controller are
+    main-only), so the sheet is kept alive by pumping the run loop between
+    steps rather than by moving the work off-main. */
+- (void)beginProgressSheetWithTitle:(NSString *)title
+{
+	if(progressSheet) return;
+
+	NSRect frame = NSMakeRect(0, 0, 460, 118);
+	progressSheet = [[NSWindow alloc] initWithContentRect: frame
+											    styleMask: NSWindowStyleMaskTitled
+											      backing: NSBackingStoreBuffered
+											        defer: NO];
+	NSView * content = [progressSheet contentView];
+
+	progressSheetTitle = [[NSTextField alloc] initWithFrame: NSMakeRect(20, 74, 420, 20)];
+	[progressSheetTitle setBezeled: NO];
+	[progressSheetTitle setDrawsBackground: NO];
+	[progressSheetTitle setEditable: NO];
+	[progressSheetTitle setSelectable: NO];
+	[progressSheetTitle setFont: [NSFont boldSystemFontOfSize: 13]];
+	[progressSheetTitle setStringValue: title ?: @""];
+	[content addSubview: progressSheetTitle];
+
+	progressSheetBar = [[NSProgressIndicator alloc] initWithFrame: NSMakeRect(20, 48, 420, 20)];
+	[progressSheetBar setStyle: NSProgressIndicatorStyleBar];
+	[progressSheetBar setIndeterminate: YES];
+	[progressSheetBar setMinValue: 0.0];
+	[progressSheetBar setMaxValue: 1.0];
+	[progressSheetBar setUsesThreadedAnimation: YES];
+	[progressSheetBar startAnimation: nil];
+	[content addSubview: progressSheetBar];
+
+	progressSheetDetail = [[NSTextField alloc] initWithFrame: NSMakeRect(20, 22, 420, 18)];
+	[progressSheetDetail setBezeled: NO];
+	[progressSheetDetail setDrawsBackground: NO];
+	[progressSheetDetail setEditable: NO];
+	[progressSheetDetail setSelectable: NO];
+	[progressSheetDetail setFont: [NSFont systemFontOfSize: 11]];
+	[progressSheetDetail setTextColor: [NSColor secondaryLabelColor]];
+	[progressSheetDetail setStringValue: @""];
+	[content addSubview: progressSheetDetail];
+
+	[progressSheetLastPaint release];
+	progressSheetLastPaint = nil;
+
+	[[self window] beginSheet: progressSheet completionHandler: ^(NSModalResponse r) { }];
+	/*  beginSheet: is asynchronous — give the run loop a pass so the sheet is
+	    actually on screen before the caller starts working. */
+	[[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
+							 beforeDate: [NSDate dateWithTimeIntervalSinceNow: 0.05]];
+}
+
+
+/*  fraction < 0 leaves the bar indeterminate (for steps with no countable
+    unit).  Repaints are throttled to ~15/s: the run-loop pump is what makes
+    the sheet live, and doing it on every item would dominate the work. */
+- (void)updateProgressSheetDetail:(NSString *)detail fraction:(double)fraction
+{
+	if(!progressSheet) return;
+
+	NSDate * now = [NSDate date];
+	if(progressSheetLastPaint && [now timeIntervalSinceDate: progressSheetLastPaint] < 0.066)
+	{
+		return;
+	}
+	[progressSheetLastPaint release];
+	progressSheetLastPaint = [now retain];
+
+	if(fraction >= 0.0)
+	{
+		if([progressSheetBar isIndeterminate])
+		{
+			[progressSheetBar stopAnimation: nil];
+			[progressSheetBar setIndeterminate: NO];
+		}
+		[progressSheetBar setDoubleValue: MIN(1.0, MAX(0.0, fraction))];
+	}
+	else if(![progressSheetBar isIndeterminate])
+	{
+		[progressSheetBar setIndeterminate: YES];
+		[progressSheetBar startAnimation: nil];
+	}
+
+	if(detail) [progressSheetDetail setStringValue: detail];
+
+	[[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
+							 beforeDate: [NSDate dateWithTimeIntervalSinceNow: 0.01]];
+}
+
+
+- (void)endProgressSheet
+{
+	if(!progressSheet) return;
+
+	[progressSheetBar stopAnimation: nil];
+	[[self window] endSheet: progressSheet];
+	[progressSheet orderOut: nil];
+
+	[progressSheetTitle release];  progressSheetTitle = nil;
+	[progressSheetDetail release]; progressSheetDetail = nil;
+	[progressSheetBar release];    progressSheetBar = nil;
+	[progressSheet release];       progressSheet = nil;
+	[progressSheetLastPaint release]; progressSheetLastPaint = nil;
+}
+
+
+/*  Runs a helper task without blocking the run loop, so the progress sheet
+    keeps painting.  When lineTotal > 0 the child's stdout is drained line by
+    line and each line counts as one completed unit (zip -d prints one
+    "deleting: <name>" per entry); otherwise output goes to the null device.
+    Either way the pipe is never left unread — an unread pipe is what used to
+    deadlock the app once the child filled the 64 KB buffer. */
+- (int)runTaskWithProgress:(NSTask *)task
+				 lineTotal:(NSInteger)lineTotal
+					 label:(NSString *)label
+{
+	__block NSInteger done = 0;
+	NSPipe * pipe = nil;
+
+	if(lineTotal > 0)
+	{
+		pipe = [NSPipe pipe];
+		[task setStandardOutput: pipe];
+		NSFileHandle * reader = [pipe fileHandleForReading];
+		[reader setReadabilityHandler: ^(NSFileHandle * h)
+		{
+			NSData * chunk = [h availableData];
+			if([chunk length] == 0)
+			{
+				[h setReadabilityHandler: nil];
+				return;
+			}
+			NSInteger lines = 0;
+			const char * bytes = [chunk bytes];
+			for(NSUInteger i = 0; i < [chunk length]; ++i)
+			{
+				if(bytes[i] == '\n') ++lines;
+			}
+			@synchronized(self) { done += lines; }
+		}];
+	}
+	else
+	{
+		[task setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+	}
+	[task setStandardError: [NSFileHandle fileHandleWithNullDevice]];
+
+	int status = -1;
+	@try
+	{
+		[task launch];
+	}
+	@catch(NSException * e)
+	{
+		NSLog(@"task launch failed (%@): %@", label, e);
+		if(pipe) [[pipe fileHandleForReading] setReadabilityHandler: nil];
+		return -1;
+	}
+
+	while([task isRunning])
+	{
+		NSInteger completed = 0;
+		@synchronized(self) { completed = done; }
+		if(lineTotal > 0)
+		{
+			[self updateProgressSheetDetail:
+				[NSString stringWithFormat: @"%@ (%ld / %ld)", label,
+					(long)MIN(completed, lineTotal), (long)lineTotal]
+							   fraction: (double)completed / (double)lineTotal];
+		}
+		else
+		{
+			[self updateProgressSheetDetail: label fraction: -1.0];
+		}
+		[[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
+								 beforeDate: [NSDate dateWithTimeIntervalSinceNow: 0.05]];
+	}
+	[task waitUntilExit];
+	status = [task terminationStatus];
+
+	if(pipe) [[pipe fileHandleForReading] setReadabilityHandler: nil];
+	return status;
+}
+
+
 - (BOOL)windowShouldClose:(id)sender
 {
 	if([self hasPendingArchiveEdits])
@@ -2448,9 +2665,17 @@ images are currently visible and then skips over them.
 		}
 		else if(response == NSAlertFirstButtonReturn)
 		{
-			[self commitPendingDeletions];
-			[self commitPendingRotations];
-			[self commitPendingReorders];
+			[self beginProgressSheetWithTitle: @"변경 사항을 원본에 반영하는 중…"];
+			@try
+			{
+				[self commitPendingDeletions];
+				[self commitPendingRotations];
+				[self commitPendingReorders];
+			}
+			@finally
+			{
+				[self endProgressSheet];
+			}
 		}
 		else
 		{
@@ -2717,11 +2942,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 	[zip setLaunchPath: @"/usr/bin/zip"];
 	[zip setCurrentDirectoryPath: staging];
 	[zip setArguments: @[@"-X", @"-r", @"-q", tmpZip, @"."]];
-	[zip setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
-	[zip setStandardError: [NSFileHandle fileHandleWithNullDevice]];
-	int status = -1;
-	@try { [zip launch]; [zip waitUntilExit]; status = [zip terminationStatus]; }
-	@catch(NSException * e) { NSLog(@"convert zip %@: %@", archivePath, e); }
+	int status = [self runTaskWithProgress: zip
+								 lineTotal: 0
+									 label: [NSString stringWithFormat: @"%@ CBZ로 묶는 중",
+												[archivePath lastPathComponent]]];
 
 	NSString * result = nil;
 	if(status == 0 && [fm fileExistsAtPath: tmpZip] && [fm moveItemAtPath: tmpZip toPath: target error: NULL])
@@ -2948,6 +3172,9 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		NSMutableArray * written = [NSMutableArray array];
 		for(NSInteger i = 0; i < n; i++)
 		{
+			[self updateProgressSheetDetail:
+				[NSString stringWithFormat: @"페이지 회전 %ld / %ld", (long)(i + 1), (long)n]
+						       fraction: (double)(i + 1) / (double)n];
 			if([ar entryIsDirectory: (int)i]) continue;
 			NSString * name = [ar nameOfEntry: (int)i];
 			NSNumber * degN = name ? entries[name] : nil;
@@ -2969,10 +3196,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 			NSMutableArray * args = [NSMutableArray arrayWithObjects: @"-X", archivePath, nil];
 			[args addObjectsFromArray: written];
 			[task setArguments: args];
-			[task setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
-			[task setStandardError: [NSFileHandle fileHandleWithNullDevice]];
-			@try { [task launch]; [task waitUntilExit]; }
-			@catch(NSException * e) { NSLog(@"zip rotate task for %@: %@", archivePath, e); }
+			[self runTaskWithProgress: task
+							lineTotal: 0
+								label: [NSString stringWithFormat: @"%@ 회전 반영 중",
+										   [archivePath lastPathComponent]]];
 
 			TSSTManagedArchive * group = pathToGroup[archivePath];
 			if(group) [group invalidateInstance];
@@ -3071,11 +3298,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		NSTask * unzip = [[[NSTask alloc] init] autorelease];
 		[unzip setLaunchPath: @"/usr/bin/unzip"];
 		[unzip setArguments: @[@"-qq", @"-o", archivePath, @"-d", extractDir]];
-		[unzip setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
-		[unzip setStandardError: [NSFileHandle fileHandleWithNullDevice]];
-		int ustatus = -1;
-		@try { [unzip launch]; [unzip waitUntilExit]; ustatus = [unzip terminationStatus]; }
-		@catch(NSException * e) { NSLog(@"unzip reorder %@: %@", archivePath, e); }
+		int ustatus = [self runTaskWithProgress: unzip
+									  lineTotal: 0
+										  label: [NSString stringWithFormat: @"%@ 펼치는 중",
+													 [archivePath lastPathComponent]]];
 
 		if(ustatus > 2)
 		{
@@ -3088,6 +3314,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		BOOL preserve = [[NSUserDefaults standardUserDefaults] boolForKey: TSSTReorderPreserveStructure];
 		for(NSUInteger i = 0; i < [order count]; ++i)
 		{
+			[self updateProgressSheetDetail:
+				[NSString stringWithFormat: @"순서 정리 %lu / %lu",
+					(unsigned long)(i + 1), (unsigned long)[order count]]
+						       fraction: (double)(i + 1) / (double)[order count]];
 			NSString * orig = order[i];
 			NSString * src = [extractDir stringByAppendingPathComponent: orig];
 			if(![fm fileExistsAtPath: src]) continue;
@@ -3117,11 +3347,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		[zip setLaunchPath: @"/usr/bin/zip"];
 		[zip setCurrentDirectoryPath: stagingDir];
 		[zip setArguments: @[@"-X", @"-r", @"-q", tmpZip, @"."]];
-		[zip setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
-		[zip setStandardError: [NSFileHandle fileHandleWithNullDevice]];
-		int zstatus = -1;
-		@try { [zip launch]; [zip waitUntilExit]; zstatus = [zip terminationStatus]; }
-		@catch(NSException * e) { NSLog(@"zip rebuild %@: %@", archivePath, e); }
+		int zstatus = [self runTaskWithProgress: zip
+									  lineTotal: 0
+										  label: [NSString stringWithFormat: @"%@ 다시 묶는 중",
+													 [archivePath lastPathComponent]]];
 
 		if(zstatus == 0 && [fm fileExistsAtPath: tmpZip])
 		{
@@ -3159,6 +3388,8 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 	NSFileManager * fm = [NSFileManager defaultManager];
 
 	/* Remove loose folder image files. */
+	NSUInteger folderTotal = [pendingFolderDeletes count];
+	NSUInteger folderDone = 0;
 	for(NSString * path in pendingFolderDeletes)
 	{
 		NSError * err = nil;
@@ -3166,6 +3397,11 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		{
 			NSLog(@"removeItem %@: %@", path, err);
 		}
+		++folderDone;
+		[self updateProgressSheetDetail:
+			[NSString stringWithFormat: @"파일 삭제 %lu / %lu",
+				(unsigned long)folderDone, (unsigned long)folderTotal]
+					       fraction: (double)folderDone / (double)folderTotal];
 	}
 	[pendingFolderDeletes removeAllObjects];
 
@@ -3213,26 +3449,15 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		NSMutableArray * args = [NSMutableArray arrayWithObjects: @"-d", archivePath, nil];
 		[args addObjectsFromArray: deleteList];
 		[task setArguments: args];
-		/*  Discard the child's output instead of piping it.  zip prints one
-		    "deleting: <name>" line per entry, and with a few hundred pages
-		    that overruns the 64 KB pipe buffer: nothing here ever read the
-		    pipe, so zip blocked forever in write() and -waitUntilExit: hung
-		    the main thread — the app looked frozen after "반영". */
-		[task setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
-		[task setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 
-		int status = -1;
-		@try
-		{
-			[task launch];
-			[task waitUntilExit];
-			status = [task terminationStatus];
-		}
-		@catch(NSException * e)
-		{
-			NSLog(@"zip task exception for %@: %@", archivePath, e);
-			continue;
-		}
+		/*  zip prints one "deleting: <name>" line per entry, so counting the
+		    lines gives real progress — and draining the pipe is what keeps
+		    the child from blocking in write() once the 64 KB buffer fills,
+		    which used to hang the app for good after "반영". */
+		int status = [self runTaskWithProgress: task
+									 lineTotal: (NSInteger)[entries count]
+										 label: [NSString stringWithFormat: @"%@ 정리 중",
+													[archivePath lastPathComponent]]];
 
 		/* zip -d returns 12 if some named entries weren't found (the
 		   AppleDouble partners often aren't); that's fine as long as the
@@ -3249,6 +3474,10 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		   pollute the map. */
 		TSSTManagedArchive * group = pathToGroup[archivePath];
 		if(!group) continue;
+
+		[self updateProgressSheetDetail:
+			[NSString stringWithFormat: @"%@ 페이지 번호 갱신 중", [archivePath lastPathComponent]]
+						   fraction: -1.0];
 
 		XADArchive * fresh = [[XADArchive alloc] initWithFile: archivePath delegate: nil error: NULL];
 		if(fresh)
