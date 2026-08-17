@@ -2,6 +2,11 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.10.2] - 2026-08-18
+
+### Fixed
+- **Deleting pages down to one (or none) crashed the app on the next redraw** (`4f3afec`). `DTPolishedProgressBar` sizes its fill as `width * (currentValue + 1) / maxValue`, and `maxValue` is the *last page index* — 0 for a one-page work, negative once the last page goes. The division by zero produced NaN geometry, `NSBezierPath` raised on it, and AppKit turns an exception thrown inside `-drawRect:` into a crash. A one-page work now simply fills the bar. Found with an `objc_exception_throw` breakpoint after a 300-page CBZ crashed on a 299-page delete.
+
 ## [1.10.1] - 2026-08-17
 
 ### Fixed
