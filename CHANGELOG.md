@@ -2,6 +2,15 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.11.0] - 2026-08-18
+
+### Added
+- **Progress sheets for bulk page deletion and for applying changes on close** (`5af5274`). Both used to leave the window sitting there with no sign of life on a big archive. Deleting more than 20 pages now shows a counted sheet (each `-removeObject:` fires the arrangedObjects KVO — thumbnail rebuild, ordinal rebase, view refresh — so the wait is real), and "반영" wraps the whole commit: `zip -d` prints one line per entry, so those lines are counted into a determinate bar, while the pack/unpack steps show an indeterminate bar with the current step. Core Data and the array controller are main-thread only, so the work stays on the main thread and the run loop is pumped between steps (repaints throttled to 15/s) instead of moving it off-main.
+
+### Fixed
+- The progress sheet was buried under the Thumbnail Exposé, which is a full-screen floating panel (`1a89746`). A bulk delete started from the grid now closes the Exposé first and returns to the paged view; the grid reloads afterwards anyway.
+- **Deleting every page in a work silently threw the queued edits away** (`1a89746`). When the last page goes, the page-count observer called `-[NSWindowController close]`, which skips `-windowShouldClose:` — the very place pending deletions are applied, so the archive was never rewritten and no "반영" prompt ever appeared. The window now closes through the normal path whenever there is something to save, and the observer no longer tears the window down in the middle of a delete loop.
+
 ## [1.10.3] - 2026-08-18
 
 ### Fixed
