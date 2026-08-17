@@ -2717,8 +2717,8 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 	[zip setLaunchPath: @"/usr/bin/zip"];
 	[zip setCurrentDirectoryPath: staging];
 	[zip setArguments: @[@"-X", @"-r", @"-q", tmpZip, @"."]];
-	[zip setStandardOutput: [NSPipe pipe]];
-	[zip setStandardError: [NSPipe pipe]];
+	[zip setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+	[zip setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 	int status = -1;
 	@try { [zip launch]; [zip waitUntilExit]; status = [zip terminationStatus]; }
 	@catch(NSException * e) { NSLog(@"convert zip %@: %@", archivePath, e); }
@@ -2969,8 +2969,8 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 			NSMutableArray * args = [NSMutableArray arrayWithObjects: @"-X", archivePath, nil];
 			[args addObjectsFromArray: written];
 			[task setArguments: args];
-			[task setStandardOutput: [NSPipe pipe]];
-			[task setStandardError: [NSPipe pipe]];
+			[task setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+			[task setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 			@try { [task launch]; [task waitUntilExit]; }
 			@catch(NSException * e) { NSLog(@"zip rotate task for %@: %@", archivePath, e); }
 
@@ -3071,8 +3071,8 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		NSTask * unzip = [[[NSTask alloc] init] autorelease];
 		[unzip setLaunchPath: @"/usr/bin/unzip"];
 		[unzip setArguments: @[@"-qq", @"-o", archivePath, @"-d", extractDir]];
-		[unzip setStandardOutput: [NSPipe pipe]];
-		[unzip setStandardError: [NSPipe pipe]];
+		[unzip setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+		[unzip setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 		int ustatus = -1;
 		@try { [unzip launch]; [unzip waitUntilExit]; ustatus = [unzip terminationStatus]; }
 		@catch(NSException * e) { NSLog(@"unzip reorder %@: %@", archivePath, e); }
@@ -3117,8 +3117,8 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		[zip setLaunchPath: @"/usr/bin/zip"];
 		[zip setCurrentDirectoryPath: stagingDir];
 		[zip setArguments: @[@"-X", @"-r", @"-q", tmpZip, @"."]];
-		[zip setStandardOutput: [NSPipe pipe]];
-		[zip setStandardError: [NSPipe pipe]];
+		[zip setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+		[zip setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 		int zstatus = -1;
 		@try { [zip launch]; [zip waitUntilExit]; zstatus = [zip terminationStatus]; }
 		@catch(NSException * e) { NSLog(@"zip rebuild %@: %@", archivePath, e); }
@@ -3213,8 +3213,13 @@ static NSData * SCRotatedImageData(NSData * src, NSInteger cw, NSString * ext)
 		NSMutableArray * args = [NSMutableArray arrayWithObjects: @"-d", archivePath, nil];
 		[args addObjectsFromArray: deleteList];
 		[task setArguments: args];
-		[task setStandardOutput: [NSPipe pipe]];
-		[task setStandardError: [NSPipe pipe]];
+		/*  Discard the child's output instead of piping it.  zip prints one
+		    "deleting: <name>" line per entry, and with a few hundred pages
+		    that overruns the 64 KB pipe buffer: nothing here ever read the
+		    pipe, so zip blocked forever in write() and -waitUntilExit: hung
+		    the main thread — the app looked frozen after "반영". */
+		[task setStandardOutput: [NSFileHandle fileHandleWithNullDevice]];
+		[task setStandardError: [NSFileHandle fileHandleWithNullDevice]];
 
 		int status = -1;
 		@try
