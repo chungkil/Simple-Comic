@@ -362,19 +362,40 @@ static void SCSetOrdinalForPage(id page, double v)
 
 
 
-/*  Also called from the thumbnail bar's background thread, which walks the
-    page list one index at a time.  Deleting pages mutates arrangedObjects
-    underneath that walk, so an unguarded objectAtIndex: raised an
-    NSRangeException on a non-main thread and aborted the app.  Take a
-    snapshot and bounds-check it. */
+/*  -arrangedObjects hands back an _NSControllerArrayProxy over the array
+    controller's live mutable array, which only the main thread may touch:
+    even -copy walks it index by index, so a delete shrinking it mid-walk
+    raises NSRangeException.  Resolving the page on the main thread keeps
+    every controller access there, while the caller (the thumbnail bar's
+    background thread) still does the expensive image work off-main. */
+- (TSSTPage *)pageAtIndexFromAnyThread:(NSInteger)index
+{
+    __block TSSTPage * page = nil;
+    void (^lookup)(void) = ^{
+        NSArray * pages = [pageController arrangedObjects];
+        if(index >= 0 && index < (NSInteger)[pages count])
+        {
+            page = [pages[index] retain];
+        }
+    };
+    if([NSThread isMainThread])
+    {
+        lookup();
+    }
+    else
+    {
+        dispatch_sync(dispatch_get_main_queue(), lookup);
+    }
+    return [page autorelease];
+}
+
+
+/*  Also called from the thumbnail bar's background thread while pages are
+    being deleted underneath it — see -pageAtIndexFromAnyThread:. */
 - (NSImage *)imageForPageAtIndex:(int)index
 {
-    NSArray * pages = [[[pageController arrangedObjects] copy] autorelease];
-    if(index < 0 || index >= (NSInteger)[pages count])
-    {
-        return nil;
-    }
-    return [pages[index] valueForKey: @"thumbnail"];
+    TSSTPage * page = [self pageAtIndexFromAnyThread: index];
+    return page ? [page valueForKey: @"thumbnail"] : nil;
 }
 
 
@@ -392,12 +413,8 @@ static void SCSetOrdinalForPage(id page, double v)
 
 - (NSString *)nameForPageAtIndex:(int)index
 {
-    NSArray * pages = [[[pageController arrangedObjects] copy] autorelease];
-    if(index < 0 || index >= (NSInteger)[pages count])
-    {
-        return nil;
-    }
-    return [pages[index] valueForKey: @"name"];
+    TSSTPage * page = [self pageAtIndexFromAnyThread: index];
+    return page ? [page valueForKey: @"name"] : nil;
 }
 
 

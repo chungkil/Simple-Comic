@@ -145,7 +145,7 @@
 	mousePoint = [self convertPoint: mousePoint fromView: nil];
     /*  `limit` is published by the background thumbnail thread and can lag a
         delete that already shrank the page list, so clamp before drawing. */
-    NSInteger drawLimit = MIN(limit, (NSInteger)[[pageController content] count]);
+    NSInteger drawLimit = MIN(limit, [self livePageCount]);
     while (counter < drawLimit)
     {
         thumbnail = [dataSource imageForPageAtIndex: counter];
@@ -280,6 +280,25 @@
 
 
 
+/*  The array controller may only be touched on the main thread, and
+    -processThumbs runs on a detached one, so bounce the count through the
+    main queue.  A direct call when we are already on main. */
+- (NSInteger)livePageCount
+{
+    __block NSInteger n = 0;
+    void (^count)(void) = ^{ n = (NSInteger)[[pageController content] count]; };
+    if([NSThread isMainThread])
+    {
+        count();
+    }
+    else
+    {
+        dispatch_sync(dispatch_get_main_queue(), count);
+    }
+    return n;
+}
+
+
 - (void)processThumbs
 {
     NSAutoreleasePool * pool = [NSAutoreleasePool new];
@@ -297,7 +316,7 @@
     /*  Re-read the count on every pass rather than snapshotting it up front:
         deletes can shrink the page list while this thread waits on the lock
         or generates a thumbnail, and a stale count walks off the end. */
-    while(limit < (NSInteger)[[pageController content] count] &&
+    while(limit < [self livePageCount] &&
           localIdent == threadIdent &&
           [dataSource respondsToSelector: @selector(imageForPageAtIndex:)])
     {
