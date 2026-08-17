@@ -2,6 +2,15 @@
 
 All notable changes to Simple Comic. Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.10.0] - 2026-08-17
+
+### Added
+- **Invert Selection (⇧⌘I)** — Edit ▸ Invert Selection flips the page multi-selection (`407c079`). While the Thumbnail Exposé is open it inverts the grid selection; otherwise it inverts the paged view's marked set. Makes "delete everything except these few" a two-step job: mark the keepers, invert, delete.
+
+### Fixed
+- **Deleting pages (from a zip/CBZ or a folder) crashed the app** (`407c079`). Removing a page fires the `arrangedObjects.@count` KVO that spawns a fresh thumbnail-generation thread, and that thread snapshotted the page count once before looping. A delete shrinking the array mid-loop left it reading an index that no longer existed — `-[__NSArrayM objectAtIndex:] index 51 beyond bounds [0 .. 50]` — and because the throw happened off the main thread nothing caught it, so the app aborted. The page accessors are now bounds-checked, `-processThumbs` re-reads the live count every pass, `threadIdent` hand-off is atomic (one thread is spawned per deleted page), and the thumbnail bar clamps its stale draw limit.
+- **Thumbnail Exposé: deleting pages could crash with `EXC_BAD_ACCESS` in the hover preview** (`407c079`). The delayed preview timer held its collection-view item without retaining it; the reload that follows a delete frees the item, and the timer then messaged freed memory. The pending item is retained, dropped together with its timer, cancelled up front on reload, and skipped if it is no longer in the grid.
+
 ## [1.9.3] - 2026-06-25
 
 ### Fixed
