@@ -186,6 +186,12 @@ CA
                                     <action selector="selectAll:" target="-1" id="1935"/>
                                 </connections>
                             </menuItem>
+                            <menuItem title="Invert Selection" keyEquivalent="i" id="scInv0001">
+                                <modifierMask key="keyEquivalentModifierMask" shift="YES" command="YES"/>
+                                <connections>
+                                    <action selector="invertPageSelection:" target="-1" id="scInv0002"/>
+                                </connections>
+                            </menuItem>
                             <menuItem isSeparatorItem="YES" id="scDel0000"/>
                             <menuItem title="Delete" id="scDel0001">
                                 <modifierMask key="keyEquivalentModifierMask"/>

@@ -374,6 +374,9 @@ static const CGFloat SCExposePreviewMax = 720.0;
 
 - (void)reloadData
 {
+    /* Reloading recycles every item, so any pending hover preview has to go
+       first — its timer would otherwise fire on an item that is gone. */
+    [self cancelHoverPreview];
     [_collectionView reloadData];
     [self restoreMarkedSelection];
 }
@@ -523,11 +526,60 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [self deleteSelectedPages];
 }
 
+/*  Flips the grid selection: every unselected page becomes selected and
+    vice versa.  Handy for "delete everything except these few". */
+- (IBAction)invertPageSelection:(id)sender
+{
+    NSInteger count = [self pageCount];
+    if(count <= 0)
+    {
+        NSBeep();
+        return;
+    }
+
+    NSSet<NSIndexPath *> * current = [_collectionView selectionIndexPaths];
+    NSMutableSet<NSIndexPath *> * inverted = [NSMutableSet set];
+    for(NSInteger i = 0; i < count; ++i)
+    {
+        NSIndexPath * ip = [NSIndexPath indexPathForItem: i inSection: 0];
+        if(![current containsObject: ip]) [inverted addObject: ip];
+    }
+
+    /* This is our own edit, not a click, so don't let the selection
+       notifications bounce back in as a jump-to-page. */
+    _syncingSelection = YES;
+    [_collectionView setSelectionIndexPaths: inverted];
+    _syncingSelection = NO;
+
+    /* Items already on screen keep whatever ring they were drawn with, so
+       repaint their selection state explicitly. */
+    for(NSCollectionViewItem * item in [_collectionView visibleItems])
+    {
+        NSIndexPath * ip = [_collectionView indexPathForItem: item];
+        [item setSelected: (ip != nil && [inverted containsObject: ip])];
+    }
+
+    [self cancelHoverPreview];
+    [_previewPanel orderOut: nil];
+    _previewIndex = -1;
+
+    [self pushMarkedSelection];
+}
+
+- (NSInteger)pageCount
+{
+    return _externalDelegate ? [_externalDelegate pageCountForExposeView: self] : 0;
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem *)item
 {
     if([item action] == @selector(delete:))
     {
         return _shown && [[_collectionView selectionIndexPaths] count] > 0;
+    }
+    if([item action] == @selector(invertPageSelection:))
+    {
+        return _shown && [self pageCount] > 0;
     }
     return YES;
 }
@@ -611,8 +663,11 @@ static const CGFloat SCExposePreviewMax = 720.0;
     if(entered)
     {
         if(_pendingItem == item) return;
-        _pendingItem = item;
         [self cancelHoverPreview];
+        /* Retained: the collection view frees its items on reload (a page
+           delete does exactly that), and the delayed preview timer would
+           otherwise fire on a freed item. */
+        _pendingItem = [item retain];
         /* While extending a multi-selection (Cmd/Shift held), don't pop the
            large hover preview — it covers the grid and fights the selection. */
         if([NSEvent modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagShift))
@@ -629,10 +684,6 @@ static const CGFloat SCExposePreviewMax = 720.0;
     }
     else
     {
-        if(_pendingItem == item)
-        {
-            _pendingItem = nil;
-        }
         [self cancelHoverPreview];
         [_previewPanel orderOut: nil];
         _previewIndex = -1;
@@ -644,6 +695,10 @@ static const CGFloat SCExposePreviewMax = 720.0;
     [_previewDelayTimer invalidate];
     [_previewDelayTimer release];
     _previewDelayTimer = nil;
+    /* Drop the pending item with its timer — nothing is left to fire, and
+       keeping the pointer alive past a reload is what made it dangle. */
+    [_pendingItem release];
+    _pendingItem = nil;
 }
 
 - (void)showHoverPreview:(NSTimer *)t
@@ -655,6 +710,9 @@ static const CGFloat SCExposePreviewMax = 720.0;
     if([NSEvent modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) return;
     SCExposeItem * item = _pendingItem;
     if(!item || ![self isShown]) return;
+    /* The item may have been pulled out of the grid (page deleted, or just
+       scrolled out and recycled) while the delay ran. */
+    if(![_collectionView indexPathForItem: item]) return;
 
     NSInteger idx = item.pageIndex;
     if(idx == _previewIndex && [_previewPanel isVisible]) return;

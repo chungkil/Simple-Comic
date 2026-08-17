@@ -362,9 +362,19 @@ static void SCSetOrdinalForPage(id page, double v)
 
 
 
+/*  Also called from the thumbnail bar's background thread, which walks the
+    page list one index at a time.  Deleting pages mutates arrangedObjects
+    underneath that walk, so an unguarded objectAtIndex: raised an
+    NSRangeException on a non-main thread and aborted the app.  Take a
+    snapshot and bounds-check it. */
 - (NSImage *)imageForPageAtIndex:(int)index
 {
-    return [[pageController arrangedObjects][index] valueForKey: @"thumbnail"];
+    NSArray * pages = [[[pageController arrangedObjects] copy] autorelease];
+    if(index < 0 || index >= (NSInteger)[pages count])
+    {
+        return nil;
+    }
+    return [pages[index] valueForKey: @"thumbnail"];
 }
 
 
@@ -382,7 +392,12 @@ static void SCSetOrdinalForPage(id page, double v)
 
 - (NSString *)nameForPageAtIndex:(int)index
 {
-    return [[pageController arrangedObjects][index] valueForKey: @"name"];
+    NSArray * pages = [[[pageController arrangedObjects] copy] autorelease];
+    if(index < 0 || index >= (NSInteger)[pages count])
+    {
+        return nil;
+    }
+    return [pages[index] valueForKey: @"name"];
 }
 
 
@@ -1152,6 +1167,28 @@ static void SCSetOrdinalForPage(id page, double v)
 - (NSUInteger)markedPageCount
 {
 	return [markedPages count];
+}
+
+
+/*  Flips the marked set over the whole work: every unmarked page becomes
+	marked and every marked page becomes unmarked.  Handles the paged view;
+	the Exposé grid has its own implementation for when its panel is key. */
+- (IBAction)invertPageSelection:(id)sender
+{
+	NSArray * arranged = [pageController arrangedObjects];
+	if([arranged count] == 0)
+	{
+		NSBeep();
+		return;
+	}
+	NSMutableSet * inverted = [NSMutableSet setWithArray: arranged];
+	[inverted minusSet: markedPages];
+	[markedPages setSet: inverted];
+	[pageView setNeedsDisplay: YES];
+	if([[SCExposeWindowController sharedController] isShown])
+	{
+		[[SCExposeWindowController sharedController] reloadData];
+	}
 }
 
 
@@ -2273,6 +2310,10 @@ images are currently visible and then skips over them.
 	else if ([menuItem action] == @selector(removePages:))
 	{
 		valid = ![[session valueForKey: TSSTViewRotation] intValue];
+	}
+	else if ([menuItem action] == @selector(invertPageSelection:))
+	{
+		valid = [[pageController arrangedObjects] count] > 0;
 	}
 	else if ([menuItem action] == @selector(rotateSavePageRight:)
 		  || [menuItem action] == @selector(rotateSavePageLeft:)

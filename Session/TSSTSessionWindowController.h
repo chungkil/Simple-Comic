@@ -233,6 +233,7 @@ enum PageSelectionMode {
 - (void)toggleMarkForCurrentPage;
 - (BOOL)currentPageIsMarked;
 - (NSUInteger)markedPageCount;
+- (IBAction)invertPageSelection:(id)sender;
 
 - (void)commitPendingDeletions;
 - (void)discardPendingDeletions;

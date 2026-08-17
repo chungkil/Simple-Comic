@@ -143,7 +143,10 @@
     NSRect point = NSMakeRect(mouse.x, mouse.y, 6.0f, 6.0f);
     NSPoint mousePoint = [[self window] convertRectFromScreen: point].origin;
 	mousePoint = [self convertPoint: mousePoint fromView: nil];
-    while (counter < limit)
+    /*  `limit` is published by the background thumbnail thread and can lag a
+        delete that already shrank the page list, so clamp before drawing. */
+    NSInteger drawLimit = MIN(limit, (NSInteger)[[pageController content] count]);
+    while (counter < drawLimit)
     {
         thumbnail = [dataSource imageForPageAtIndex: counter];
         drawRect = [self rectForIndex: counter];
@@ -158,7 +161,7 @@
         ++counter;
     }
 
-    if(dragInProgress && dropTargetIndex >= 0 && dropTargetIndex < limit)
+    if(dragInProgress && dropTargetIndex >= 0 && dropTargetIndex < drawLimit)
     {
         NSRect target = NSInsetRect([self rectForIndex: dropTargetIndex], 2, 2);
         [[[NSColor controlAccentColor] colorWithAlphaComponent: 0.9] set];
@@ -167,7 +170,7 @@
         [p stroke];
     }
 
-    if(dragInProgress && dragStartIndex >= 0 && dragStartIndex < limit)
+    if(dragInProgress && dragStartIndex >= 0 && dragStartIndex < drawLimit)
     {
         NSImage * ghost = [dataSource imageForPageAtIndex: dragStartIndex];
         if(ghost)
@@ -280,14 +283,22 @@
 - (void)processThumbs
 {
     NSAutoreleasePool * pool = [NSAutoreleasePool new];
-    ++threadIdent;
-    unsigned localIdent = threadIdent;
+    unsigned localIdent;
+    /*  A page removal fires the KVO that spawns this thread, so several of
+        these can be in flight at once; the ident hand-off has to be atomic
+        or two threads can both believe they are the current one. */
+    @synchronized(self)
+    {
+        localIdent = ++threadIdent;
+    }
     [thumbLock lock];
-    NSInteger pageCount = [[pageController content] count];
 	NSAutoreleasePool * localPool = [NSAutoreleasePool new];
     limit = 0;
-    while(limit < (pageCount) && 
-          localIdent == threadIdent && 
+    /*  Re-read the count on every pass rather than snapshotting it up front:
+        deletes can shrink the page list while this thread waits on the lock
+        or generates a thumbnail, and a stale count walks off the end. */
+    while(limit < (NSInteger)[[pageController content] count] &&
+          localIdent == threadIdent &&
           [dataSource respondsToSelector: @selector(imageForPageAtIndex:)])
     {
         [dataSource imageForPageAtIndex: limit];
