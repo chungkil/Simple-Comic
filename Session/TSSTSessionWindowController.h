@@ -166,6 +166,10 @@ enum PageSelectionMode {
 	NSTextField * progressSheetTitle;
 	NSTextField * progressSheetDetail;
 	NSDate * progressSheetLastPaint;
+
+	/* Set while a bulk delete is walking its page list, so the "no pages
+	   left" observer doesn't tear the window down mid-loop. */
+	BOOL bulkDeleteInProgress;
 }
 
 @property (retain) NSArray * pageSortDescriptor;
@@ -244,6 +248,7 @@ enum PageSelectionMode {
 - (IBAction)invertPageSelection:(id)sender;
 
 /* Progress sheet for long page operations (see the ivars above). */
+- (void)closeAfterLastPageRemoved;
 - (void)beginProgressSheetWithTitle:(NSString *)title;
 - (void)updateProgressSheetDetail:(NSString *)detail fraction:(double)fraction;
 - (void)endProgressSheet;

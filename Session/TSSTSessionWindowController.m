@@ -282,8 +282,12 @@ static void SCSetOrdinalForPage(id page, double v)
 {
     if([[pageController arrangedObjects] count] <= 0)
     {
-        [self close];
-//		[[NSNotificationCenter defaultCenter] postNotificationName: TSSTSessionEndNotification object: self];
+        /*  A bulk delete removes pages one at a time, so this fires on its
+            last iteration — closing here would pull the window (and its
+            progress sheet) out from under the running loop.  The loop closes
+            the window itself when it is done. */
+        if(bulkDeleteInProgress) return;
+        [self closeAfterLastPageRemoved];
         return;
     }
 	
@@ -1344,8 +1348,21 @@ static void SCSetOrdinalForPage(id page, double v)
 	    Show a sheet for anything big enough to be noticeable. */
 	NSUInteger deleteTotal = [targets count];
 	BOOL sheeted = (deleteTotal > 20);
-	if(sheeted) [self beginProgressSheetWithTitle: @"페이지를 삭제하는 중…"];
+	if(sheeted)
+	{
+		/*  The Exposé is a full-screen floating panel, so a sheet on the
+		    session window would be buried underneath it.  Drop back to the
+		    paged view for the duration — the grid reloads afterwards
+		    anyway, now with the deleted pages gone. */
+		if([[SCExposeWindowController sharedController] isShown])
+		{
+			[[SCExposeWindowController sharedController] hide];
+			[[self window] makeKeyAndOrderFront: self];
+		}
+		[self beginProgressSheetWithTitle: @"페이지를 삭제하는 중…"];
+	}
 
+	bulkDeleteInProgress = YES;
 	@try
 	{
 		NSUInteger done = 0;
@@ -1367,7 +1384,15 @@ static void SCSetOrdinalForPage(id page, double v)
 	}
 	@finally
 	{
+		bulkDeleteInProgress = NO;
 		if(sheeted) [self endProgressSheet];
+	}
+
+	/* Deleting every page ends the session; close through the normal path so
+	   the queued edits still get their "반영" prompt. */
+	if([[pageController arrangedObjects] count] == 0)
+	{
+		[self closeAfterLastPageRemoved];
 	}
 }
 
@@ -2440,6 +2465,24 @@ images are currently visible and then skips over them.
 	[session removeObserver: self forKeyPath: @"loupe"];
     [session unbind: TSSTViewRotation];
     [session unbind: @"selection"];
+}
+
+
+/*  The window closes itself once its last page is gone.  Going through
+    -[NSWindowController close] skips -windowShouldClose:, which is where
+    pending edits are applied — so deleting every page used to throw the
+    queued deletions away without ever asking.  Route through the normal
+    close path whenever there is something to save. */
+- (void)closeAfterLastPageRemoved
+{
+	if([self hasPendingArchiveEdits])
+	{
+		[[self window] performClose: nil];
+	}
+	else
+	{
+		[self close];
+	}
 }
 
 
